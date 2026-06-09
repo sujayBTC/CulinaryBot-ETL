@@ -1,0 +1,55 @@
+
+services:
+
+  db:
+    image: postgres:15
+    container_name: etl_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DEV_DB_USER}
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD}
+      POSTGRES_DB: ${DEV_DB_NAME}
+    ports:
+      - "${DEV_DB_PORT}:5432"
+    command: ["postgres", "-p", "5432"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - backend_network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h localhost -p 5432 -U ${DEV_DB_USER} -d ${DEV_DB_NAME}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: etl_redis
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_ARGS=--port 6379 --bind ${REDIS_BIND} --protected-mode ${REDIS_PROTECTION_MODE}
+    ports:
+      - "${REDIS_PORT}:6379"
+    networks:
+      - backend_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  db_data:
+
+networks:
+  backend_network:
+    name: backend_network
+    driver: bridge
