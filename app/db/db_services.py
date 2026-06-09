@@ -9,7 +9,7 @@ from sqlalchemy import insert
 
 from logger import logger
 
-from utils import (
+from app.utils import (
     DATA_FIELD,
     FIELD_NOT_FOUND_IN_MODEL,
     INVALID_FIELDS,
@@ -18,7 +18,7 @@ from utils import (
     STATUS_FIELD,
 )
 
-from utils import (
+from app.utils import (
     create_service_failure_response,
     create_service_success_response,
 )
@@ -114,7 +114,7 @@ class DBRecordService:
     @staticmethod
     async def bulk_create_records(
         db: AsyncSession,
-        model,
+        model:  type[Model],
         records: list[dict],
         batch_size: int = 1000,
     ) -> dict:
@@ -124,11 +124,11 @@ class DBRecordService:
             for i in range(0, len(records), batch_size):
                 batch = records[i:i + batch_size]
 
-                await db.execute(
+                db.execute(
                     insert(model).values(batch)
                 )
 
-                await db.commit()
+                db.commit()
 
                 total_inserted += len(batch)
                 
@@ -141,7 +141,7 @@ class DBRecordService:
             )
 
         except Exception as e:
-            await db.rollback()
+            db.rollback()
             return create_service_failure_response(str(e))
 
     @staticmethod

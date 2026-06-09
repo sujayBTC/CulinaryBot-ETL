@@ -1,17 +1,12 @@
-import httpx
-from logger import logger
+from app.db.database import get_database_session
+from app.db.db_services import DBRecordService
+from app.model.models import Recipe
+from app.schemas.recipe import Recipe
 
-def get_recipe_node(state):
-    
-    url = "http://localhost:8000"
-    
-    recipe = httpx.get(
-        url=url
+async def fetch_recipe():
+   async for db in get_database_session(): 
+        response = DBRecordService.fetch_records(
+            db=db,
+            model=Recipe,
         )
-    
-    print("recipe===>",recipe)
-    
-    logger.info(f"fetch recipe {recipe.status_code}")
-    
-    return state
-    
+        pass

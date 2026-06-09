@@ -45,11 +45,36 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  
+  celery_worker:
+    build: .
+    container_name: etl_worker
+    restart: unless-stopped
+    command: celery -A celery_app worker --loglevel=info
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+    networks:
+      - backend_network
+
+  celery_beat:
+    build: .
+    container_name: etl_beat
+    restart: unless-stopped
+    command: celery -A celery_app beat --loglevel=info
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+    networks:
+      - backend_network
 
 volumes:
   db_data:
 
 networks:
   backend_network:
-    name: backend_network
-    driver: bridge
+    external: true

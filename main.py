@@ -7,7 +7,9 @@ from app.model.models import Recipe
 
 from app.db.database import get_database_session
 from app.config import BACK_END_URL
+from celery_app import celery_app
 
+@celery_app.task(name="app.tasks.recipe")
 async def get_recipe_node():
     
     try:
