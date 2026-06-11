@@ -1,29 +1,20 @@
 
 services:
 
-  db:
-    image: postgres:15
-    container_name: etl_db
+  mongo:
+    image: mongo:7
+    container_name: etl_mongo
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DEV_DB_USER}
-      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD}
-      POSTGRES_DB: ${DEV_DB_NAME}
     ports:
-      - "${DEV_DB_PORT}:5432"
-    command: ["postgres", "-p", "5432"]
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     env_file:
       - .env
     networks:
       - backend_network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -h localhost -p 5432 -U ${DEV_DB_USER} -d ${DEV_DB_NAME}",
-        ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -53,7 +44,7 @@ services:
     command: celery -A celery_app worker --loglevel=info
     depends_on:
       - redis
-      - db
+      - mongo
     env_file:
       - .env
     networks:
@@ -66,14 +57,14 @@ services:
     command: celery -A celery_app beat --loglevel=info
     depends_on:
       - redis
-      - db
+      - mongo
     env_file:
       - .env
     networks:
       - backend_network
 
 volumes:
-  db_data:
+  mongo_data:
 
 networks:
   backend_network:

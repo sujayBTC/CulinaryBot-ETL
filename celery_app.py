@@ -1,5 +1,6 @@
 from celery import Celery
-from celery.schedules import crontab
+
+from data_pipelines.beat_schedule import BEAT_SCHEDULE
 
 celery_app = Celery(
     "elt-pipeline",
@@ -7,4 +8,7 @@ celery_app = Celery(
     backend="redis://redis:6379/0",
 )
 
-import celery_task.recipe_task
+celery_app.conf.beat_schedule = BEAT_SCHEDULE
+
+import data_pipelines.recipe_ingest.tasks  # noqa: F401, E402
+import data_pipelines.recipe_keyword.tasks  # noqa: F401, E402
