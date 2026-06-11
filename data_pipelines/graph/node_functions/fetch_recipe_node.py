@@ -15,36 +15,39 @@ UNWANTED_FIELDS = {
 }
 
 current_index = 0
-
+recipe_chunks = []
 
 async def fetch_recipe_node(state: State) -> State:
+    current_index = state.get("current_chunk_index", 0)
     
-    ensure_indexes()
-    collection = get_recipes_collection()
+    if not recipe_chunks:
+    
+        ensure_indexes()
+        collection = get_recipes_collection()
 
-    unique_recipes = []
-    seen_names = set()
-    recipes = []
+        unique_recipes = []
+        seen_names = set()
+        recipes = []
 
-    for doc in collection.find({}):
-        record = {**doc["payload"], **doc.get("enrichments", {})}
-        recipes.append(record)
+        for doc in collection.find({}):
+            record = {**doc["payload"], **doc.get("enrichments", {})}
+            recipes.append(record)
 
-    for recipe in recipes:
-        recipe_name = recipe.get("name", "").strip().lower()
-        if not recipe_name or recipe_name in seen_names:
-            continue
+        for recipe in recipes:
+            recipe_name = recipe.get("name", "").strip().lower()
+            if not recipe_name or recipe_name in seen_names:
+                continue
 
-        seen_names.add(recipe_name)
-        cleaned_recipe = {
-            key: value for key, value in recipe.items() if key not in UNWANTED_FIELDS
-        }
-        unique_recipes.append(cleaned_recipe)
+            seen_names.add(recipe_name)
+            cleaned_recipe = {
+                key: value for key, value in recipe.items() if key not in UNWANTED_FIELDS
+            }
+            unique_recipes.append(cleaned_recipe)
 
-    recipe_chunks = [
-        unique_recipes[i : i + CHUNK_SIZE]
-        for i in range(0, len(unique_recipes), CHUNK_SIZE)
-    ]
+        recipe_chunks = [
+            unique_recipes[i : i + CHUNK_SIZE]
+            for i in range(0, len(unique_recipes), CHUNK_SIZE)
+        ]
 
     print(f"Original Recipes: {len(recipes)}")
     print(f"Unique Recipes: {len(unique_recipes)}")
