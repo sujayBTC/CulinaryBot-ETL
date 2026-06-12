@@ -1,8 +1,10 @@
 import httpx
-
-from config import BACK_END_URL
-from db.mongo import upsert_recipe_batch
+from data_pipelines.db.mongo import upsert_recipe_batch
 from logger import logger
+
+from data_pipelines.core.base import run_async
+from data_pipelines.core.celery import celery_app
+from data_pipelines.core.config import BACK_END_URL
 
 
 async def run_recipe_ingest() -> dict:
@@ -22,3 +24,8 @@ async def run_recipe_ingest() -> dict:
     upserted_count = upsert_recipe_batch(recipes)
     logger.info(f"Recipe ingest complete upserted_count={upserted_count}")
     return {"upserted_count": upserted_count}
+
+
+@celery_app.task(name="data_pipelines.recipe_ingest.tasks.recipe_ingest_task")
+def recipe_ingest():
+    return run_async(run_recipe_ingest())

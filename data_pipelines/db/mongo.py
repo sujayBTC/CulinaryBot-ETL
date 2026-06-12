@@ -2,7 +2,12 @@ from datetime import datetime, timezone
 
 from pymongo import MongoClient, UpdateOne
 
-from config import MONGO_DB, MONGO_URL, RECIPES_COLLECTION, SOURCE_ID_FIELD
+from data_pipelines.core.config import (
+    MONGO_DB,
+    MONGO_URL,
+    RECIPES_COLLECTION,
+    SOURCE_ID_FIELD,
+)
 
 _client = MongoClient(MONGO_URL)
 _db = _client[MONGO_DB]
