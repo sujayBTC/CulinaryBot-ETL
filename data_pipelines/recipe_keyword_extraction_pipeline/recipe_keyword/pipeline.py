@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from data_pipelines.recipe_keyword_extraction_pipeline.extractor import extract_keywords
+# from data_pipelines.recipe_keyword_extraction_pipeline.extractor  import extract_keywords
 from db.mongo import ensure_indexes, get_recipes_collection
-from logger import logger
+# from logger import logger
 
 
 async def run_recipe_keyword_extraction() -> dict:
@@ -18,15 +18,15 @@ async def run_recipe_keyword_extraction() -> dict:
             skipped_count += 1
             continue
 
-        keywords = extract_keywords(doc["payload"])
-        collection.update_one(
-            {"_id": doc["_id"]},
-            {"$set": {"enrichments.keywords": keywords, "updated_at": now}},
-        )
-        updated_count += 1
+        # keywords = extract_keywords(doc["payload"])
+        # collection.update_one(
+        #     {"_id": doc["_id"]},
+        #     {"$set": {"enrichments.keywords": keywords, "updated_at": now}},
+        # )
+        # updated_count += 1
 
-    logger.info(
-        f"Recipe keyword extraction complete "
-        f"updated_count={updated_count} skipped_count={skipped_count}"
-    )
+    # logger.info(
+    #     f"Recipe keyword extraction complete "
+    #     f"updated_count={updated_count} skipped_count={skipped_count}"
+    # )
     return {"updated_count": updated_count, "skipped_count": skipped_count}

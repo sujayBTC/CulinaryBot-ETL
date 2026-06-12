@@ -11,4 +11,4 @@ celery_app = Celery(
 celery_app.conf.beat_schedule = BEAT_SCHEDULE
 
 import data_pipelines.recipe_ingest.tasks  # noqa: F401, E402
-import data_pipelines.recipe_keyword.tasks  # noqa: F401, E402
+# import data_pipeline.recipe_ingest.  # noqa: F401, E402

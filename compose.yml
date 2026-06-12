@@ -2,7 +2,7 @@
 services:
 
   mongo:
-    image: mongo:7
+    image: mongo:7.0
     container_name: etl_mongo
     restart: unless-stopped
     ports:
@@ -18,6 +18,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
 
   redis:
     image: redis/redis-stack:latest
@@ -49,6 +53,7 @@ services:
       - .env
     networks:
       - backend_network
+    user: "1000:1000"
 
   celery_beat:
     build: .

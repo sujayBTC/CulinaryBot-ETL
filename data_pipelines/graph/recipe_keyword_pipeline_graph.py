@@ -1,12 +1,14 @@
 from typing import TypedDict, List, Literal
 import asyncio
 
+from langgraph.checkpoint.mongodb import MongoDBSaver
+
 from langgraph.graph import StateGraph, START
 from langgraph.constants import END
 
 from data_pipelines.graph.node_functions.fetch_recipe_node import fetch_recipe_node
 from utils.utils import State
-
+from config import MONGO_URL, MONGO_DB
 
 def build_graph() -> StateGraph[State]:
     graph = StateGraph(State)
@@ -22,7 +24,24 @@ def build_graph() -> StateGraph[State]:
 
 if __name__ == "__main__":
     # Quick local test: run the graph end-to-end and print final state.
-    g = build_graph().compile()
+    with MongoDBSaver.from_conn_string(
+        MONGO_URL,
+        MONGO_DB
+        ) as checkpointer:
+        
+        g = build_graph().compile(
+            checkpointer=checkpointer
+        )
+        
+        config = {
+            "configurable": {
+                "thread_id": "recipe-keyword-etl-job"
+            }
+        }
 
-    result = asyncio.run(g.ainvoke({}))
-    print("Final state:", result)
+        result = asyncio.run(g.ainvoke(
+            {},
+            config=config
+            ))
+        
+        print("Final state:", result)
