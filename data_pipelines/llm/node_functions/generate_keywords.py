@@ -1,67 +1,196 @@
 from langchain_core.messages import HumanMessage, SystemMessage
-
+from pydantic import BaseModel
 from data_pipelines.llm.model import llm
 from data_pipelines.llm.state_manager import State
 from langgraph.types import Command
 
+class RecipeKeywords(BaseModel):
+    keywords: list[str]
+
 def generate_keywords(state: State):
     chunk = state["current_chunk"]
     current_chunk_index = state.get("current_chunk_index", 0)
+    
     existing_keywords = state.get("processed_data", [])
 
     prompt = """
-                    RECIPE KEYWORD DICTIONARY MANAGER
-            Purpose: Maintain a consistent, immutable global keyword dictionary for recipe categorization across a dataset. Keywords map recipes to consistent categories.
-            Core Rules:
+                    OBJECTIVE
 
-            Existing keywords are immutable — never modify, rename, delete, or replace existing keywords
-            Reuse before creating — always check if a concept already exists before adding new keywords
-            Only add new keywords — output only keywords that don't exist in the current dictionary
-            Consistency over completeness — prefer one standardized keyword over multiple variations
+        Extract recommendation and discovery keywords from recipes.
 
-            Keyword Guidelines:
+        The goal is NOT to create an ingredient index.
 
-            Format: lowercase, singular nouns, short phrases (1-2 words max)
-            Examples: vegetarian, non-vegetarian, lunch, breakfast, grilling, dairy-free, spicy, dessert
-            Avoid: duplicates, synonyms, recipe-specific noise, overly specific variations
+        The goal IS to create tags that help users discover similar recipes.
 
-            Valid Keyword Categories:
+        PRIORITY ORDER
 
-            Dietary restrictions/preferences (e.g., vegan, gluten-free, dairy-free)
-            Meal type (e.g., breakfast, lunch, dinner, snack)
-            Protein type (e.g., chicken, beef, fish, lentil)
-            Cuisine type (e.g., indian, italian, thai)
-            Cooking method (e.g., grilled, baked, fried, steamed)
-            Flavor profile (e.g., spicy, sweet, umami)
-            Main ingredient (e.g., rice, pasta, potato)
-            Equipment (e.g., oven, stovetop, blender)
+        1. Dietary profile
+        2. Nutrition profile
+        3. Flavor profile
+        4. Meal occasion
+        5. Cuisine
+        6. Cooking style
+        7. Texture
+        8. Preparation style
+        9. Serving context
 
-            Input Format:
-            json = {
-            "existing_keywords": ["veg", "non-veg", "lunch", "breakfast"],
-            "recipe_text": "..."
-            }
-            Output Format:
-            json = {
-            "new_keywords": ["keyword1", "keyword2"]
-            }
-            Example:
-            Input:
-            json = {
-            "existing_keywords": ["veg", "non-veg", "lunch", "breakfast"],
-            "recipe_text": "Grilled chicken with garlic butter for dinner"
-            }
-            Output:
-            json = {
-            "new_keywords": ["chicken", "grilled", "dinner"]
-            }
-            
-            strict rule:
-                strictly return a output as JSON.
+        DO NOT EXTRACT
+
+        * Ingredient names
+        * Recipe names
+        * Dish names
+        * Brand names
+        * Garnishes
+        * Minor ingredients
+
+        Examples:
+
+        Chicken Biryani
+        BAD:
+        ["chicken","rice","onion","garam-masala"]
+
+        GOOD:
+        [
+        "spicy",
+        "aromatic",
+        "high-protein",
+        "indian",
+        "lunch",
+        "dinner",
+        "one-pot",
+        "rich",
+        "festive",
+        "non-vegetarian"
+        ]
+
+        Paneer Butter Masala
+        BAD:
+        ["paneer","butter","tomato"]
+
+        GOOD:
+        [
+        "creamy",
+        "rich",
+        "vegetarian",
+        "indian",
+        "dinner",
+        "protein-rich",
+        "restaurant-style"
+        ]
+
+        KEYWORD CATEGORIES
+
+        dietary_profile:
+        [
+        "vegetarian",
+        "vegan",
+        "non-vegetarian",
+        "gluten-free",
+        "dairy-free",
+        "keto",
+        "low-carb",
+        "high-protein",
+        "low-fat",
+        "plant-based"
+        ]
+
+        meal_occasion:
+        [
+        "breakfast",
+        "brunch",
+        "lunch",
+        "dinner",
+        "snack",
+        "party",
+        "festive",
+        "quick-meal",
+        "family-meal"
+        ]
+
+        flavor_profile:
+        [
+        "spicy",
+        "mild",
+        "sweet",
+        "savory",
+        "tangy",
+        "smoky",
+        "rich",
+        "creamy",
+        "aromatic",
+        "zesty",
+        "earthy"
+        ]
+
+        cuisine_type:
+        [
+        "indian",
+        "italian",
+        "thai",
+        "chinese",
+        "mexican",
+        "japanese",
+        "mediterranean"
+        ]
+
+        preparation_style:
+        [
+        "one-pot",
+        "slow-cooked",
+        "restaurant-style",
+        "street-food",
+        "comfort-food",
+        "home-style"
+        ]
+
+        texture_profile:
+        [
+        "crispy",
+        "crunchy",
+        "soft",
+        "tender",
+        "silky",
+        "chewy"
+        ]
+
+        INFERENCE RULES
+
+        * Infer tags even when not explicitly stated.
+
+        * If chicken, fish, eggs, lamb, beef, seafood are present:
+        add "non-vegetarian".
+
+        * If recipe contains substantial protein:
+        add "high-protein".
+
+        * If multiple spices are used:
+        add "spicy" and/or "aromatic".
+
+        * If butter, cream, coconut milk, cheese, or rich sauces dominate:
+        add "creamy" and/or "rich".
+
+        * If typically eaten as a main meal:
+        add "lunch" and/or "dinner".
+
+        * If traditionally served at celebrations:
+        add "festive".
+
+        * If everything cooks in one vessel:
+        add "one-pot".
+
+        OUTPUT REQUIREMENTS
+
+        Return only recommendation keywords.
+
+        Do not return ingredient names unless the ingredient itself is the primary identity of the recipe category (rare exception).
+
+        The final keyword list should describe HOW the recipe feels, WHEN it is eaten, WHO it suits, and WHAT type of food it is—not what ingredients it contains.
+
     """
 
+    structured_llm = llm.with_structured_output(RecipeKeywords)
 
-    response = llm.invoke(
+    response = structured_llm.invoke(
         [
             SystemMessage(content=prompt),
             HumanMessage(content=f"""
@@ -72,11 +201,16 @@ def generate_keywords(state: State):
                 {chunk}
                 
             """),
+            
         ]
     )
     
     print("llm response====>", response)
-    result = response.content
+
+    
+    # result = response.get("keywords", [])
+    result = response.keywords
+
 
     return Command(
         update ={
