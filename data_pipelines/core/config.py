@@ -13,5 +13,5 @@ AUDIT_LOGS_COLLECTION = os.getenv("AUDIT_LOGS_COLLECTION", "audit_logs")
 AUDITS_COLLECTION = "audit_logs"
 
 BASE_URL = os.getenv("BASE_URL")
-API_KEY = os.getenv("APIKEY")
+API_KEY = os.getenv("API_KEY")
 MODEL = os.getenv("MODEL")

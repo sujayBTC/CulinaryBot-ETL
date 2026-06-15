@@ -26,7 +26,7 @@ def build_graph() -> StateGraph[State]:
 
     # linear flow: start -> fetch -> process
     graph.add_edge(START, "fetch_recipes")
-    graph.add_edge("fetch_receipe", "chunk_orchestrator")
+    graph.add_edge("fetch_recipes", "chunk_orchestrator")
     graph.add_edge("chunk_orchestrator", END)
     
     return graph

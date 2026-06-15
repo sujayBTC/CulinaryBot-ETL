@@ -8,12 +8,16 @@ from data_pipelines.core.config import BACK_END_URL
 
 
 async def run_recipe_ingest() -> dict:
+    print("log 1 ========>")
     async with httpx.AsyncClient() as client:
         response = await client.get(BACK_END_URL)
         response.raise_for_status()
 
     recipe_data = response.json()
-    recipes = recipe_data.get("data", [])
+    
+    recipes = recipe_data.get("items", [])
+    
+    print("recipes===>",recipes)
 
     logger.info(f"Fetched recipes from backend status={response.status_code}")
 
@@ -22,6 +26,7 @@ async def run_recipe_ingest() -> dict:
         return {"upserted_count": 0}
 
     upserted_count = upsert_recipe_batch(recipes)
+    print("upsert successfully ========>")
     logger.info(f"Recipe ingest complete upserted_count={upserted_count}")
     return {"upserted_count": upserted_count}
 

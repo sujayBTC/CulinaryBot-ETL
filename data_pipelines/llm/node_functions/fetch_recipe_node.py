@@ -48,6 +48,8 @@ def create_token_chunks(recipes: list[dict]) -> list[list[dict]]:
     current_chunk = []
     current_tokens = 0
     skipped_count = 0
+    
+    print("MAX_CHUNK_TOKENS======>",MAX_CHUNK_TOKENS)
 
     for recipe in recipes:
         recipe_tokens = count_tokens(recipe)

@@ -9,7 +9,7 @@ def generate_keywords(state: State):
     current_chunk_index = state.get("current_chunk_index", 0)
     existing_keywords = state.get("processed_data", [])
 
-    prompt = f"""
+    prompt = """
                     RECIPE KEYWORD DICTIONARY MANAGER
             Purpose: Maintain a consistent, immutable global keyword dictionary for recipe categorization across a dataset. Keywords map recipes to consistent categories.
             Core Rules:
@@ -37,25 +37,29 @@ def generate_keywords(state: State):
             Equipment (e.g., oven, stovetop, blender)
 
             Input Format:
-            json{
+            json = {
             "existing_keywords": ["veg", "non-veg", "lunch", "breakfast"],
             "recipe_text": "..."
             }
             Output Format:
-            json{
+            json = {
             "new_keywords": ["keyword1", "keyword2"]
             }
             Example:
             Input:
-            json{
+            json = {
             "existing_keywords": ["veg", "non-veg", "lunch", "breakfast"],
             "recipe_text": "Grilled chicken with garlic butter for dinner"
             }
             Output:
-            json{
+            json = {
             "new_keywords": ["chicken", "grilled", "dinner"]
             }
+            
+            strict rule:
+                strictly return a output as JSON.
     """
+
 
     response = llm.invoke(
         [
@@ -70,7 +74,9 @@ def generate_keywords(state: State):
             """),
         ]
     )
-    result = response.content()
+    
+    print("llm response====>", response)
+    result = response.content
 
     return Command(
         update ={

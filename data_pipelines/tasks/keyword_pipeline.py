@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from uuid import uuid4
+import uuid
 
 from data_pipelines.core.celery import celery_app
 from data_pipelines.core.config import AUDIT_LOGS_COLLECTION
@@ -13,7 +13,7 @@ audit_collection = get_collection(AUDIT_LOGS_COLLECTION)
 
 async def run_keyword_pipeline():
     # Quick local test: run the graph end-to-end and print final state.
-    execution_id = uuid4()
+    execution_id = uuid.uuid4()
     state = {
                 "execution_id": execution_id,
                 "current_chunk":[],
@@ -25,7 +25,7 @@ async def run_keyword_pipeline():
 
     try:
         print("Creating Graph========>>>>>")
-        graph = build_graph()
+        graph = build_graph().compile()
         return await graph.ainvoke(state)
 
     except Exception as e:

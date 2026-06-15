@@ -9,10 +9,13 @@ from data_pipelines.core.config import (
     SOURCE_ID_FIELD,
 )
 
-_client = MongoClient(MONGO_URL)
+_client = MongoClient(MONGO_URL,  uuidRepresentation="standard")
 _db = _client[MONGO_DB]
 _indexes_ensured = False
 
+
+def get_collection(colection):
+    return _db[colection]
 
 def get_recipes_collection():
     return _db[RECIPES_COLLECTION]
