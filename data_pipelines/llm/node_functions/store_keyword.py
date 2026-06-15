@@ -1,9 +1,12 @@
 from langgraph.graph import END
 from langgraph.types import Command
 
-from data_pipelines.core.config import MONGO_DB
+from data_pipelines.core.config import RECIPES_COLLECTION
+from data_pipelines.db.mongo import get_recipes_collection
 
-collection = MONGO_DB["keywords"]
+# collection = MONGO_DB["RECIPES_COLLECTION"]
+
+collection = get_recipes_collection()
 
 
 def store_keywords(state):

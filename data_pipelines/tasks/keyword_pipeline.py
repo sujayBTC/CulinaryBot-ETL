@@ -3,10 +3,12 @@ from datetime import datetime
 from uuid import uuid4
 
 from data_pipelines.core.celery import celery_app
-from data_pipelines.core.config import MONGO_DB
+from data_pipelines.core.config import AUDIT_LOGS_COLLECTION
+from data_pipelines.db.mongo import get_collection
 from data_pipelines.llm.recipe_keyword_pipeline_graph import build_graph
 
-audit_collection = MONGO_DB["audit_logs"]
+# audit_collection = MONGO_DB["audit_logs"]
+audit_collection = get_collection(AUDIT_LOGS_COLLECTION)
 
 
 async def run_keyword_pipeline():
