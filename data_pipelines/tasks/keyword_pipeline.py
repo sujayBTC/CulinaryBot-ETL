@@ -7,6 +7,10 @@ from data_pipelines.core.config import AUDIT_LOGS_COLLECTION
 from data_pipelines.db.mongo import get_collection
 from data_pipelines.llm.recipe_keyword_pipeline_graph import build_graph
 
+from pymongo import MongoClient
+from langgraph.checkpoint.mongodb import MongoDBSaver
+from data_pipelines.core.config import MONGO_DB, MONGO_URL
+
 # audit_collection = MONGO_DB["audit_logs"]
 audit_collection = get_collection(AUDIT_LOGS_COLLECTION)
 
@@ -25,8 +29,24 @@ async def run_keyword_pipeline():
 
     try:
         print("Creating Graph========>>>>>")
-        graph = build_graph().compile()
-        return await graph.ainvoke(state)
+        client = MongoClient(MONGO_URL)
+        checkpointer = MongoDBSaver(client)
+
+
+        graph = build_graph().compile(
+            checkpointer=checkpointer
+        )
+        
+        config = {
+        "configurable": {
+            "thread_id": "recipe-keyword-etl-job"
+        }
+    }
+        return await graph.ainvoke(
+            state,
+            config=config
+            )
+            
 
     except Exception as e:
         audit_collection.insert_one(
