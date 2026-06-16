@@ -188,15 +188,32 @@ def generate_keywords(state: State):
 
     """
 
+    prompt1 = """
+        Your expert in find a keyword from the data.
+        
+        Your going to do alalyse the data and find out the what are the keyword you can figerout
+        
+        step:
+            1.you have to analyse the data and find the keywords like this dish for breakfast, it's non-veg dish...
+            2.don't add duplicate's and don't add same meaning keywords
+            3.if you find out any new keyword is not in the existing_keywords then only add in the list otherwise skip it.
+            
+        input:
+            sample keyword : ["breakfast", "non-veg", "veg", "diabetes"]
+        
+        output:
+            sample output: ["breakfast", "non-veg", "veg", "diabetes",....]
+            
+        existing_keywords = {existing_keywords}
+    """
+    
+    
     structured_llm = llm.with_structured_output(RecipeKeywords)
 
     response = structured_llm.invoke(
         [
-            SystemMessage(content=prompt),
+            SystemMessage(content=prompt1.format(existing_keywords=existing_keywords)),
             HumanMessage(content=f"""
-                Existing Global Keyword Dictionary:
-                {existing_keywords}
-
                 Recipe Chunk:
                 {chunk}
                 

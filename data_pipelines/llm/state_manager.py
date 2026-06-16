@@ -8,3 +8,7 @@ class State(TypedDict, total=False):
     current_chunk_index: int
     current_chunk_tokens: int
     processed_data: List[str]
+    recipe: dict
+    total_recipe: int
+    current_recipe_index: int
+    processed_recipe: int 
