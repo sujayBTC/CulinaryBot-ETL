@@ -1,8 +1,11 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 from data_pipelines.llm.model import llm
-from data_pipelines.llm.state_manager import State
+from data_pipelines.langgraph.state_manager import State
 from langgraph.types import Command
+from data_pipelines.db.mongo import get_collection
+
+collection = get_collection("keywords")
 
 class RecipeKeywords(BaseModel):
     keywords: list[str]
@@ -12,6 +15,15 @@ def generate_keywords(state: State):
     current_chunk_index = state.get("current_chunk_index", 0)
     
     existing_keywords = state.get("processed_data", [])
+    
+    if not existing_keywords:
+        print("log 1=======================================================================>")
+        last_docs = collection.find_one(
+                    sort=[("_id", -1)]
+                )
+        existing_keywords =  getattr(last_docs, "keywords", [])
+    
+    print("existing_keywords=================>", existing_keywords)
 
     prompt = """
                 # QUICK REFERENCE - ADVANCED KEYWORD EXTRACTION
@@ -394,8 +406,11 @@ def generate_keywords(state: State):
 
     response = structured_llm.invoke(
         [
-            SystemMessage(content=prompt1.format(existing_keywords=existing_keywords)),
+            SystemMessage(content=prompt),
             HumanMessage(content=f"""
+                Existing Global Keyword Dictionary:
+                {existing_keywords}
+
                 Recipe Chunk:
                 {chunk}
                 

@@ -4,7 +4,7 @@ from langgraph.types import Command
 import tiktoken
 
 from data_pipelines.db.mongo import ensure_indexes, get_recipes_collection
-from data_pipelines.llm.state_manager import State
+from data_pipelines.langgraph.state_manager import State
 
 UNWANTED_FIELDS = {
     "created_at",

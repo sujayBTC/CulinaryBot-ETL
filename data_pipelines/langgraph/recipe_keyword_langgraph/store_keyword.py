@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from langgraph.graph import END
 from langgraph.types import Command
 
@@ -15,6 +17,9 @@ def store_keywords(state):
     collection.update_one(
         {"_id": state["execution_id"]},
         {"$set": {"keywords": state["processed_data"]}},
+        {"$setOnInsert": {
+            "cdate": datetime.utcnow()
+        }},
         upsert=True,
     )
     print("Added keywords in the MongoDB================================>>>>>>>>>>>>>>>>")

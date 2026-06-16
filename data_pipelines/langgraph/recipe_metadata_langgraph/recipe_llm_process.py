@@ -1,7 +1,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 from data_pipelines.llm.model import llm
-from data_pipelines.llm.state_manager import State
+from data_pipelines.langgraph.state_manager import State
 from langgraph.types import Command
 
 class RecipeKeywords(BaseModel):

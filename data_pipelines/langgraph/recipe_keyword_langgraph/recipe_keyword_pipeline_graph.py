@@ -7,11 +7,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
 from data_pipelines.core.config import MONGO_DB
-from data_pipelines.llm.node_functions.chunk_orchestrator import chunk_orchestrator
-from data_pipelines.llm.node_functions.fetch_recipe_node import fetch_recipe_node
-from data_pipelines.llm.node_functions.generate_keywords import generate_keywords
-from data_pipelines.llm.node_functions.store_keyword import store_keywords
-from data_pipelines.llm.state_manager import State
+from data_pipelines.langgraph.recipe_keyword_langgraph.chunk_orchestrator import chunk_orchestrator
+from data_pipelines.langgraph.recipe_keyword_langgraph.fetch_recipe_node import fetch_recipe_node
+from data_pipelines.langgraph.recipe_keyword_langgraph.generate_keywords import generate_keywords
+from data_pipelines.langgraph.recipe_keyword_langgraph.store_keyword import store_keywords
+from data_pipelines.langgraph.state_manager import State
 
 
 def build_graph() -> StateGraph[State]:
