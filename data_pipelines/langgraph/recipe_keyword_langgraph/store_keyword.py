@@ -16,8 +16,8 @@ def store_keywords(state):
     print("Reached store keywords==========================================>>>>>>>>>>>>>>>>>>>>>>>>.",state)
     collection.update_one(
         {"_id": state["execution_id"]},
-        {"$set": {"keywords": state["processed_data"]}},
-        {"$setOnInsert": {
+        {"$set": {"keywords": state["processed_data"]},
+        "$setOnInsert": {
             "cdate": datetime.utcnow()
         }},
         upsert=True,

@@ -108,9 +108,10 @@ async def fetch_recipe_node(state: State) -> State:
     """
     print("Fetch Recipe Node Triggered ===============>>>>>")
     current_index = state.get("current_chunk_index", 0)
+    chunk_count = state.get("total_chunks", 0)
 
     # Initialize chunks only once
-    if "recipe_chunks" not in state:
+    if chunk_count == 0:
         try:
             ensure_indexes()
             collection = get_recipes_collection()
@@ -167,14 +168,10 @@ async def fetch_recipe_node(state: State) -> State:
                 )
                 print(f"✓ Total tokens across all chunks: {total_chunk_tokens}")
 
-            state["recipe_chunks"] = recipe_chunks
-
         except Exception as e:
             print(f"Error fetching recipes: {e}")
             state["recipe_chunks"] = []
             raise
-
-    recipe_chunks = state["recipe_chunks"]
 
     # Validate current_index
     if not recipe_chunks:
@@ -197,5 +194,11 @@ async def fetch_recipe_node(state: State) -> State:
     state["current_chunk_tokens"] = count_tokens({"recipes": state["current_chunk"]})
 
     return Command(
+        update={
+            "current_chunk" : recipe_chunks[current_index],
+            "current_chunk_index" : current_index,
+            "total_chunks" : len(recipe_chunks),
+            "current_chunk_tokens" : count_tokens({"recipes": state["current_chunk"]})
+        },
         goto="generate_keywords"
     )

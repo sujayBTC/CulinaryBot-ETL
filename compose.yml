@@ -42,6 +42,8 @@ services:
     container_name: etl_worker
     restart: unless-stopped
     command: celery -A data_pipelines.core.celery.celery_app worker --loglevel=info
+    volumes:
+      - .:/app
     depends_on:
       - redis
       - mongo
@@ -55,6 +57,8 @@ services:
     container_name: etl_beat
     restart: unless-stopped
     command: celery -A data_pipelines.core.celery.celery_app beat --loglevel=info
+    volumes:
+      - .:/app
     depends_on:
       - redis
       - mongo
