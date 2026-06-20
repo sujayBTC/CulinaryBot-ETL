@@ -2,8 +2,9 @@ import json
 from typing import Optional
 from langgraph.types import Command
 import tiktoken
+from bson import ObjectId
 
-from data_pipelines.db.mongo import ensure_indexes, get_recipes_collection
+from data_pipelines.db.mongo import ensure_indexes, get_recipes_collection, get_collection
 from data_pipelines.langgraph.state_manager import State
 
 UNWANTED_FIELDS = {
@@ -33,21 +34,23 @@ def count_tokens(data: dict) -> int:
     text = json.dumps(data, default=str, ensure_ascii=False)
     return len(encoder.encode(text))
 
+BATCH = {
+  "job_id": "",
+  "chunk_index": 0,
+  "recipe_ids": []
+}
 
-def create_token_chunks(recipes: list[dict]) -> list[list[dict]]:
-    """
-    Split recipes into chunks that fit within MAX_CHUNK_TOKENS.
+chunks_ids_collection = get_collection("chunks_details")
 
-    Args:
-        recipes: List of recipe dictionaries
+def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
 
-    Returns:
-        List of recipe chunks, where each chunk is a list of recipes
-    """
     chunks = []
+    chunk_ids = []
     current_chunk = []
+    current_chunk_ids = []
     current_tokens = 0
     skipped_count = 0
+    
     
     print("MAX_CHUNK_TOKENS======>",MAX_CHUNK_TOKENS)
 
@@ -64,53 +67,103 @@ def create_token_chunks(recipes: list[dict]) -> list[list[dict]]:
             )
             skipped_count += 1
             continue
-
+        recipe_id = recipe.get("_id",0)
+        
         # Start new chunk if current one is full
         if current_tokens + recipe_tokens > MAX_CHUNK_TOKENS:
             if current_chunk:  # Only append if non-empty
                 chunks.append(current_chunk)
+                chunk_ids.append(current_chunk_ids)
+            if current_chunk_ids:
+                batch = BATCH.copy()
+                batch["job_id"] = job_id
+                batch["chunk_index"] = BATCH["chunk_index"] + 1
+                batch["recipe_ids"] = current_chunk_ids
+                
             current_chunk = [recipe]
+            current_chunk_ids = [recipe_id]
             current_tokens = recipe_tokens
         else:
             current_chunk.append(recipe)
+            batch = BATCH.copy()
+            current_chunk_ids.append(recipe_id)
             current_tokens += recipe_tokens
 
     # Append final chunk
     if current_chunk:
         chunks.append(current_chunk)
+        
+    if current_chunk_ids:
+        batch = BATCH.copy()
+        batch["job_id"] = job_id
+        batch["chunk_index"] = BATCH["chunk_index"] + 1
+        batch["recipe_ids"] = current_chunk_ids
+        chunk_ids.append(batch)
 
     if skipped_count > 0:
         print(f"Skipped {skipped_count} oversized recipes")
+        
+    return_response = {
+        "chunks": chunks,
+        "chunks_ids": chunk_ids
+    }
 
-    return chunks
+    return return_response
 
 
 async def fetch_recipe_node(state: State) -> State:
-    """
-    Fetch and process recipes from MongoDB, chunked by token count.
-
-    This function:
-    1. Retrieves recipes from MongoDB (once, cached in state)
-    2. Deduplicates by name
-    3. Removes unwanted fields
-    4. Chunks recipes based on token count
-    5. Sets the current chunk based on current_chunk_index
-
-    Args:
-        state: State dictionary with optional 'current_chunk_index' key
-
-    Returns:
-        Updated state with recipe chunks and current chunk info
-
-    Raises:
-        IndexError: If current_chunk_index exceeds available chunks
-        KeyError: If MongoDB documents lack required structure
-    """
     print("Fetch Recipe Node Triggered ===============>>>>>")
     current_index = state.get("current_chunk_index", 0)
     chunk_count = state.get("total_chunks", 0)
-
+    job_id = state["execution_id"]
     # Initialize chunks only once
+    
+    keyword_collection = get_collection("keyword")
+    
+    total_chunk = keyword_collection["total_chunks"]
+    last_proccesed_chunk = keyword_collection["current_chunk_index"]
+    
+    if total_chunk != last_proccesed_chunk:
+        ensure_indexes()
+        recipe_collection = get_recipes_collection()
+        
+        recipe_ids = chunks_ids_collection.find_one({"chunk_index": last_proccesed_chunk})
+        
+        cursor = recipe_collection.find(
+            {
+                "_id": {
+                    "$in": [ObjectId(id_) for id_ in recipe_ids]
+                }
+            }
+        )
+        recipes = [
+            {
+                **doc.get("payload", {}),
+                **doc.get("enrichments", {}),
+            }
+            for doc in cursor
+        ]
+        
+        cleaned_recipes = []
+        
+        for recipe in recipes:
+            cleaned_recipe = {
+                        key: value
+                        for key, value in recipes.items()
+                        if key not in UNWANTED_FIELDS
+                    }
+            cleaned_recipes.append(cleaned_recipe)
+        
+        return Command(
+            update={
+                "current_chunk" : cleaned_recipes,
+                "current_chunk_index" : last_proccesed_chunk,
+                "total_chunks" : total_chunk,
+            },
+            goto="generate_keywords"
+        )
+        
+    
     if chunk_count == 0:
         try:
             ensure_indexes()
@@ -121,6 +174,7 @@ async def fetch_recipe_node(state: State) -> State:
             for doc in collection.find({}):
                 try:
                     record = {
+                        "_id": str(doc["_id"]),
                         **doc.get("payload", {}),
                         **doc.get("enrichments", {}),
                     }
@@ -155,13 +209,21 @@ async def fetch_recipe_node(state: State) -> State:
                 unique_recipes.append(cleaned_recipe)
 
             # Create token-based chunks
-            recipe_chunks = create_token_chunks(unique_recipes)
+            chunk_data = create_token_chunks(job_id,unique_recipes)
+            
+            recipe_chunks = chunk_data["chunks"]
+            
+            recipe_chunk_ids = chunk_data["chunks_ids"]
+            
+            chunks_ids_collection.insert_many(recipe_chunk_ids)
 
+            print("recipe_id===========>",recipe_chunk_ids)
+            
             # Logging
             print(f"✓ Fetched recipes: {len(recipes)}")
             print(f"✓ Unique recipes: {len(unique_recipes)}")
             print(f"✓ Chunks created: {len(recipe_chunks)}")
-
+            
             if recipe_chunks:
                 total_chunk_tokens = sum(
                     count_tokens(r) for chunk in recipe_chunks for r in chunk

@@ -17,7 +17,7 @@ audit_collection = get_collection(AUDIT_LOGS_COLLECTION)
 
 async def run_keyword_pipeline():
     # Quick local test: run the graph end-to-end and print final state.
-    execution_id = uuid.uuid4()
+    execution_id = "execution_id_1"
     state = {
                 "execution_id": execution_id,
                 "current_chunk":[],

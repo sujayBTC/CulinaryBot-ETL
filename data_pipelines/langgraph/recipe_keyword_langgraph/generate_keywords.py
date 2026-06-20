@@ -14,7 +14,7 @@ class RecipeKeywords(BaseModel):
 def generate_keywords(state: State):
     chunk = state["current_chunk"]
     current_chunk_index = state.get("current_chunk_index", 0)
-    
+    total_chunk = state["total_chunks"]
     existing_keywords = state.get("processed_data", [])
     
     if not existing_keywords:

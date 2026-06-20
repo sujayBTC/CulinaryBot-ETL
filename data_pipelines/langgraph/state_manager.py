@@ -2,7 +2,7 @@ from typing import List, Literal, TypedDict
 from uuid import uuid4
 
 class State(TypedDict, total=False):
-    execution_id: uuid4
+    execution_id: str
     current_chunk: List[dict]
     total_chunks: int
     current_chunk_index: int
@@ -10,7 +10,7 @@ class State(TypedDict, total=False):
     processed_data: List[str]
 
 class RecipeState(TypedDict, total=False):
-    execution_id: uuid4
+    execution_id: str
     recipe: dict
     recipe_id: int
     total_recipe: int
