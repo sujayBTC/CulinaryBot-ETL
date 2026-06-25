@@ -7,11 +7,13 @@ from data_pipelines.db.mongo import get_collection
 from data_pipelines.llm.prompt import KEYWORDS_EXTRACT_PROMPT
 import json
 collection = get_collection("keywords")
+chunks_ids_collection = get_collection("chunks_details")
 
 class RecipeKeywords(BaseModel):
     keywords: list[str]
 
 def generate_keywords(state: State):
+    job_id = state["execution_id"]
     chunk = state["current_chunk"]
     current_chunk_index = state.get("current_chunk_index", 0)
     total_chunk = state["total_chunks"]

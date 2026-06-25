@@ -13,6 +13,7 @@ from data_pipelines.core.config import MONGO_DB, MONGO_URL
 
 # audit_collection = MONGO_DB["audit_logs"]
 audit_collection = get_collection(AUDIT_LOGS_COLLECTION)
+keyword_collection = get_collection("keywords")
 
 
 async def run_keyword_pipeline():

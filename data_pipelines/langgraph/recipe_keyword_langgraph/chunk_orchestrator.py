@@ -6,6 +6,6 @@ def chunk_orchestrator(state):
     total_chunks = state["total_chunks"]
 
     if current_idx < total_chunks:
-        return Command(goto="fetch_recipe_node")
+        return Command(goto="fetch_recipes")
 
     return Command(goto="store_keywords")

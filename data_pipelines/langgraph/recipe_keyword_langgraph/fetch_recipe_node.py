@@ -2,10 +2,11 @@ import json
 from typing import Optional
 from langgraph.types import Command
 import tiktoken
-from bson import ObjectId
 
 from data_pipelines.db.mongo import ensure_indexes, get_recipes_collection, get_collection
 from data_pipelines.langgraph.state_manager import State
+from langgraph.graph import END
+from celery import current_task
 
 UNWANTED_FIELDS = {
     "created_at",
@@ -25,34 +26,36 @@ RESERVED_TOKENS = (
     + 5_000  # expected response
     + 8_000  # safety buffer
 )
-MAX_CHUNK_TOKENS = MODEL_CONTEXT_WINDOW - RESERVED_TOKENS
+# MAX_CHUNK_TOKENS = MODEL_CONTEXT_WINDOW - RESERVED_TOKENS
+MAX_CHUNK_TOKENS = 5000
 encoder = tiktoken.encoding_for_model(MODEL_NAME)
 
+
+BATCH = {
+  "job_id": "",
+  "chunk_index": 0,
+  "recipe_ids": [],
+  "status":"pending"
+}
+
+chunks_ids_collection = get_collection("chunks_details")
 
 def count_tokens(data: dict) -> int:
     """Count tokens in a JSON-serialized dictionary."""
     text = json.dumps(data, default=str, ensure_ascii=False)
     return len(encoder.encode(text))
 
-BATCH = {
-  "job_id": "",
-  "chunk_index": 0,
-  "recipe_ids": []
-}
-
-chunks_ids_collection = get_collection("chunks_details")
-
 def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
 
     chunks = []
     chunk_ids = []
+    
     current_chunk = []
     current_chunk_ids = []
     current_tokens = 0
+    chunk_index = 0
     skipped_count = 0
     
-    
-    print("MAX_CHUNK_TOKENS======>",MAX_CHUNK_TOKENS)
 
     for recipe in recipes:
         recipe_tokens = count_tokens(recipe)
@@ -67,25 +70,27 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
             )
             skipped_count += 1
             continue
-        recipe_id = recipe.get("_id",0)
+        recipe_id = recipe.get("_id")
         
         # Start new chunk if current one is full
         if current_tokens + recipe_tokens > MAX_CHUNK_TOKENS:
             if current_chunk:  # Only append if non-empty
                 chunks.append(current_chunk)
-                chunk_ids.append(current_chunk_ids)
+
             if current_chunk_ids:
-                batch = BATCH.copy()
-                batch["job_id"] = job_id
-                batch["chunk_index"] = BATCH["chunk_index"] + 1
-                batch["recipe_ids"] = current_chunk_ids
+                chunk_ids.append({
+                    "job_id": job_id,
+                    "chunk_index": chunk_index,
+                    "recipe_ids": current_chunk_ids.copy(),
+                    "status": "pending"
+                })
+                chunk_index += 1
                 
             current_chunk = [recipe]
             current_chunk_ids = [recipe_id]
             current_tokens = recipe_tokens
         else:
             current_chunk.append(recipe)
-            batch = BATCH.copy()
             current_chunk_ids.append(recipe_id)
             current_tokens += recipe_tokens
 
@@ -94,75 +99,58 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
         chunks.append(current_chunk)
         
     if current_chunk_ids:
-        batch = BATCH.copy()
-        batch["job_id"] = job_id
-        batch["chunk_index"] = BATCH["chunk_index"] + 1
-        batch["recipe_ids"] = current_chunk_ids
-        chunk_ids.append(batch)
+        chunk_ids.append({
+            "job_id": job_id,
+            "chunk_index": chunk_index,
+            "recipe_ids": current_chunk_ids.copy(),
+            "status": "pending"
+        })
+
 
     if skipped_count > 0:
         print(f"Skipped {skipped_count} oversized recipes")
-        
-    return_response = {
-        "chunks": chunks,
-        "chunks_ids": chunk_ids
-    }
 
-    return return_response
+    return chunk_ids
 
 
 async def fetch_recipe_node(state: State) -> State:
-    print("Fetch Recipe Node Triggered ===============>>>>>")
+    global recipe_chunk_ids
+
     current_index = state.get("current_chunk_index", 0)
     chunk_count = state.get("total_chunks", 0)
     job_id = state["execution_id"]
-    # Initialize chunks only once
+
+    keyword_collection = get_collection("keywords")
+    last_proccess_keyword = keyword_collection.find_one({"_id": str(job_id)})
     
-    keyword_collection = get_collection("keyword")
+    if last_proccess_keyword:
+        status = last_proccess_keyword["status"]
+        total_chunk = last_proccess_keyword["total_chunks"]
+        last_proccesed_chunk = last_proccess_keyword["current_chunk_index"] + 1
+        chunk_count = last_proccess_keyword["total_chunks"]
     
-    total_chunk = keyword_collection["total_chunks"]
-    last_proccesed_chunk = keyword_collection["current_chunk_index"]
-    
-    if total_chunk != last_proccesed_chunk:
-        ensure_indexes()
-        recipe_collection = get_recipes_collection()
+        if status == "incomplete":
+            if total_chunk != last_proccesed_chunk:
+
+                
+                chunk_details = chunks_ids_collection.find_one({
+                    "job_id": job_id,
+                    "chunk_index": last_proccesed_chunk
+                    })
+                
+                recipe_ids = chunk_details["recipe_ids"]
+                
+                return Command(
+                    update={
+                        "current_chunk" : recipe_ids,
+                        "current_chunk_index" : last_proccesed_chunk,
+                        "total_chunks" : total_chunk,
+                    },
+                    goto="generate_keywords"
+                )
         
-        recipe_ids = chunks_ids_collection.find_one({"chunk_index": last_proccesed_chunk})
-        
-        cursor = recipe_collection.find(
-            {
-                "_id": {
-                    "$in": [ObjectId(id_) for id_ in recipe_ids]
-                }
-            }
-        )
-        recipes = [
-            {
-                **doc.get("payload", {}),
-                **doc.get("enrichments", {}),
-            }
-            for doc in cursor
-        ]
-        
-        cleaned_recipes = []
-        
-        for recipe in recipes:
-            cleaned_recipe = {
-                        key: value
-                        for key, value in recipes.items()
-                        if key not in UNWANTED_FIELDS
-                    }
-            cleaned_recipes.append(cleaned_recipe)
-        
-        return Command(
-            update={
-                "current_chunk" : cleaned_recipes,
-                "current_chunk_index" : last_proccesed_chunk,
-                "total_chunks" : total_chunk,
-            },
-            goto="generate_keywords"
-        )
-        
+        if status == "complete":
+            return Command(goto=END)
     
     if chunk_count == 0:
         try:
@@ -209,57 +197,26 @@ async def fetch_recipe_node(state: State) -> State:
                 unique_recipes.append(cleaned_recipe)
 
             # Create token-based chunks
-            chunk_data = create_token_chunks(job_id,unique_recipes)
-            
-            recipe_chunks = chunk_data["chunks"]
-            
-            recipe_chunk_ids = chunk_data["chunks_ids"]
+            recipe_chunk_ids = create_token_chunks(job_id,unique_recipes)
             
             chunks_ids_collection.insert_many(recipe_chunk_ids)
-
-            print("recipe_id===========>",recipe_chunk_ids)
-            
-            # Logging
-            print(f"✓ Fetched recipes: {len(recipes)}")
-            print(f"✓ Unique recipes: {len(unique_recipes)}")
-            print(f"✓ Chunks created: {len(recipe_chunks)}")
-            
-            if recipe_chunks:
-                total_chunk_tokens = sum(
-                    count_tokens(r) for chunk in recipe_chunks for r in chunk
-                )
-                print(f"✓ Total tokens across all chunks: {total_chunk_tokens}")
 
         except Exception as e:
             print(f"Error fetching recipes: {e}")
             state["recipe_chunks"] = []
             raise
 
-    # Validate current_index
-    if not recipe_chunks:
-        print("No recipe chunks available")
-        state["current_chunk"] = []
-        state["current_chunk_index"] = 0
-        state["total_chunks"] = 0
-        return state
-
-    if current_index >= len(recipe_chunks):
+    if current_index >= len(recipe_chunk_ids):
         raise IndexError(
             f"current_chunk_index {current_index} exceeds "
-            f"available chunks ({len(recipe_chunks)})"
+            f"available chunks ({len(recipe_chunk_ids)})"
         )
-
-    # Set current chunk info
-    state["current_chunk"] = recipe_chunks[current_index]
-    state["current_chunk_index"] = current_index
-    state["total_chunks"] = len(recipe_chunks)
-    state["current_chunk_tokens"] = count_tokens({"recipes": state["current_chunk"]})
-
+    
     return Command(
         update={
-            "current_chunk" : recipe_chunks[current_index],
+            "current_chunk" : recipe_chunk_ids[current_index]["recipe_ids"],
             "current_chunk_index" : current_index,
-            "total_chunks" : len(recipe_chunks),
+            "total_chunks" : len(recipe_chunk_ids),
             "current_chunk_tokens" : count_tokens({"recipes": state["current_chunk"]})
         },
         goto="generate_keywords"

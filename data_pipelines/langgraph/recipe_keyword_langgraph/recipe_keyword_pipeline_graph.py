@@ -20,13 +20,13 @@ def build_graph() -> StateGraph[State]:
     # graph.set_node_defaults(retry_policy=RetryPolicy(max_attempts=0))
     # nodes
     graph.add_node("fetch_recipes", fetch_recipe_node)
-    graph.add_node("chunk_orchestrator", chunk_orchestrator)
     graph.add_node("generate_keywords", generate_keywords)
+    graph.add_node("chunk_orchestrator", chunk_orchestrator)
     graph.add_node("store_keywords", store_keywords)
 
     # linear flow: start -> fetch -> process
     graph.add_edge(START, "fetch_recipes")
-    graph.add_edge("fetch_recipes", "chunk_orchestrator")
+    # graph.add_edge("fetch_recipes", "generate_keywords")
     graph.add_edge("chunk_orchestrator", END)
     
     return graph
