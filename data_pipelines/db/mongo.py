@@ -6,7 +6,7 @@ from data_pipelines.core.config import (
     MONGO_DB,
     MONGO_URL,
     RECIPES_COLLECTION,
-    KEYWORDS_COLLECTION,
+    METADATA_COLLECTION,
     SOURCE_ID_FIELD,
     AUDIT_LOGS_COLLECTION
 )
@@ -16,7 +16,7 @@ _db = _client[MONGO_DB]
 _indexes_ensured = False
 recipe_collection = _db[RECIPES_COLLECTION]
 audit_collection = _db[AUDIT_LOGS_COLLECTION]
-keywords_collection = _db[KEYWORDS_COLLECTION]
+metadata_collection = _db[METADATA_COLLECTION]
 def get_collection(colection):
     return _db[colection]
 

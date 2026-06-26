@@ -8,7 +8,7 @@ from data_pipelines.llm.model import llm
 from datetime import datetime
 import asyncio
 import time
-from data_pipelines.db.mongo import keywords_collection
+from data_pipelines.db.mongo import metadata_collection
 class RecipeWithKeywords(BaseModel):
     keywords: dict
 
@@ -33,13 +33,14 @@ async def run_keywords_generator(recipe_id_str):
             )
             return
 
-        # if recipe.get("keyword_status") == "success":
-        #     return
+        if recipe.get("metadata_status") == "success":
+            return
 
-        keywords_collection.insert_one(
+        metadata_collection.insert_one(
             {
             "_id": recipe_id,
-            "keyword_status": "processing",
+            "recipe_id": recipe.get("source_id"),
+            "metadata_status": "processing",    
             "created_at": datetime.utcnow()
             }
         )
@@ -68,25 +69,41 @@ async def run_keywords_generator(recipe_id_str):
         print(response.keywords)
         keys = response.keywords
         recipe_time_taken = time.perf_counter() - recipe_start_time
-        keywords_collection.update_one(
+        metadata_collection.update_one(
             {"_id": recipe_id},
             {
                 "$set": {
-                    "keywords": keys,
-                    "keyword_status": "success",
+                    "metadata": keys,
+                    "metadata_status": "success",
                     "time_taken_seconds": round(recipe_time_taken, 2),
                     "completed_at": datetime.utcnow()
+                }
+            }
+        )
+        recipe_collection.update_one(
+            {"_id": recipe_id},
+            {
+                "$set": {
+                    "metadata_status": "success"
                 }
             }
         )
 
     except Exception as e:
 
-        keywords_collection.update_one(
+        metadata_collection.update_one(
             {"_id": recipe_id},
             {
                 "$set": {
-                    "keyword_status": "failed"
+                    "metadata_status": "failed"
+                }
+            }
+        )
+        recipe_collection.update_one(
+            {"_id": recipe_id},
+            {
+                "$set": {
+                    "metadata_status": "failed"
                 }
             }
         )

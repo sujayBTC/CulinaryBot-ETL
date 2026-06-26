@@ -1,11 +1,11 @@
-from data_pipelines.db.mongo import keywords_collection
+from data_pipelines.db.mongo import metadata_collection
 
-first = keywords_collection.find_one(
+first = metadata_collection.find_one(
     {"created_at": {"$exists": True}},
     sort=[("created_at", 1)]
 )
 
-last = keywords_collection.find_one(
+last = metadata_collection.find_one(
     {"completed_at": {"$exists": True}},
     sort=[("completed_at", -1)]
 )
