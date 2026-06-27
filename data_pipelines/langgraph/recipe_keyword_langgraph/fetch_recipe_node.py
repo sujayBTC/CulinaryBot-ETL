@@ -26,8 +26,8 @@ RESERVED_TOKENS = (
     + 5_000  # expected response
     + 8_000  # safety buffer
 )
-# MAX_CHUNK_TOKENS = MODEL_CONTEXT_WINDOW - RESERVED_TOKENS
-MAX_CHUNK_TOKENS = 5000
+MAX_CHUNK_TOKENS = MODEL_CONTEXT_WINDOW - RESERVED_TOKENS
+# MAX_CHUNK_TOKENS = 5000
 encoder = tiktoken.encoding_for_model(MODEL_NAME)
 
 
@@ -60,7 +60,6 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
     for recipe in recipes:
         recipe_tokens = count_tokens(recipe)
 
-        # Handle recipes larger than chunk size
         if recipe_tokens > MAX_CHUNK_TOKENS:
             recipe_name = recipe.get("name", "Unknown")
             print(
@@ -71,10 +70,9 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
             skipped_count += 1
             continue
         recipe_id = recipe.get("_id")
-        
-        # Start new chunk if current one is full
+
         if current_tokens + recipe_tokens > MAX_CHUNK_TOKENS:
-            if current_chunk:  # Only append if non-empty
+            if current_chunk:
                 chunks.append(current_chunk)
 
             if current_chunk_ids:
@@ -94,7 +92,6 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
             current_chunk_ids.append(recipe_id)
             current_tokens += recipe_tokens
 
-    # Append final chunk
     if current_chunk:
         chunks.append(current_chunk)
         
@@ -112,9 +109,11 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
 
     return chunk_ids
 
+skip = 0
 
 async def fetch_recipe_node(state: State) -> State:
     global recipe_chunk_ids
+    global skip
 
     current_index = state.get("current_chunk_index", 0)
     chunk_count = state.get("total_chunks", 0)
@@ -125,11 +124,15 @@ async def fetch_recipe_node(state: State) -> State:
     
     if last_proccess_keyword:
         status = last_proccess_keyword["status"]
-        total_chunk = last_proccess_keyword["total_chunks"]
-        last_proccesed_chunk = last_proccess_keyword["current_chunk_index"] + 1
-        chunk_count = last_proccess_keyword["total_chunks"]
     
         if status == "incomplete":
+            total_chunk = last_proccess_keyword["total_chunks"]
+            if skip == 0:
+                last_proccesed_chunk = last_proccess_keyword["current_chunk_index"] + 1
+                skip = 1
+            else:
+                last_proccesed_chunk = current_index
+                
             if total_chunk != last_proccesed_chunk:
 
                 
@@ -152,7 +155,7 @@ async def fetch_recipe_node(state: State) -> State:
         if status == "complete":
             return Command(goto=END)
     
-    if chunk_count == 0:
+    if len(recipe_chunk_ids) == 0:
         try:
             ensure_indexes()
             collection = get_recipes_collection()
@@ -206,12 +209,6 @@ async def fetch_recipe_node(state: State) -> State:
             state["recipe_chunks"] = []
             raise
 
-    if current_index >= len(recipe_chunk_ids):
-        raise IndexError(
-            f"current_chunk_index {current_index} exceeds "
-            f"available chunks ({len(recipe_chunk_ids)})"
-        )
-    
     return Command(
         update={
             "current_chunk" : recipe_chunk_ids[current_index]["recipe_ids"],

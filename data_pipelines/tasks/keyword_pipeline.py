@@ -66,3 +66,7 @@ async def run_keyword_pipeline():
 @celery_app.task
 def keyword_pipeline():
     asyncio.run(run_keyword_pipeline())
+
+
+if __name__ == "__main__":
+    asyncio.run(run_keyword_pipeline())
