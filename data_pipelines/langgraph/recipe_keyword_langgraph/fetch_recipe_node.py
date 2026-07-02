@@ -110,6 +110,7 @@ def create_token_chunks(job_id,recipes: list[dict]) -> list[list[dict]]:
     return chunk_ids
 
 skip = 0
+recipe_chunk_ids = []
 
 async def fetch_recipe_node(state: State) -> State:
     global recipe_chunk_ids

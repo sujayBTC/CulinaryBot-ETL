@@ -41,7 +41,7 @@ def upsert_recipe_batch(records: list[dict], batch_size: int = 1000) -> int:
             UpdateOne(
                 {"source_id": record[SOURCE_ID_FIELD]},
                 {
-                    "$set": {"payload": record, "fetched_at": now},
+                    "$set": {"payload": record, "fetched_at": now, "status":"unprocessed"},
                     "$setOnInsert": {"enrichments": {}, "updated_at": now},
                 },
                 upsert=True,

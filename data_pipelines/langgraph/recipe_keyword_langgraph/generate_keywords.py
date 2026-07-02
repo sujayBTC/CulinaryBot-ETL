@@ -24,11 +24,9 @@ def generate_keywords(state: State):
     current_chunk_index = state.get("current_chunk_index", 0)
     total_chunk = state["total_chunks"]
     existing_keywords = state.get("processed_data", [])
- 
     try:
         ensure_indexes()
         recipe_collection = get_recipes_collection()
-        
         cursor = recipe_collection.find(
                     {
                         "_id": {
@@ -52,48 +50,54 @@ def generate_keywords(state: State):
             if last_docs:
                 existing_keywords = last_docs.get("keywords",[])
 
-            prompt = KEYWORDS_EXTRACT_PROMPT   
+        prompt = KEYWORDS_EXTRACT_PROMPT   
 
-            response = llm.invoke(
-                [
-                    SystemMessage(content=prompt),
-                    HumanMessage(content=f"""
-                        Existing Global Keyword Dictionary:
-                        {existing_keywords}
+        response = llm.invoke(
+            [
+                SystemMessage(content=prompt),
+                HumanMessage(content=f"""
+                    Existing Global Keyword Dictionary:
+                    {existing_keywords}
 
-                        Recipe Chunk:
-                        {recipes}
-                        
-                    """),
+                    Recipe Chunk:
+                    {recipes}
                     
-                ]
-            )
+                """),
+                
+            ]
+        )
 
-            content = response.content.strip()
+        content = response.content.strip()
 
-            if content.startswith("```json"):
-                content = content.removeprefix("```json").strip()
+        if content.startswith("```json"):
+            content = content.removeprefix("```json").strip()
 
-            if content.endswith("```"):
-                content = content.removesuffix("```").strip()
+        if content.endswith("```"):
+            content = content.removesuffix("```").strip()
 
-            result = json.loads(content)
-            
-            chunks_ids_collection.update_one(
-                {"chunk_index":current_chunk_index},
+        result = json.loads(content)
+        for _id in chunk:
+            recipe_collection.update_one(
+                {"_id":ObjectId(_id)},
                 {"$set":{
-                    "status":"complete"
+                    "status":"proceesed"
                 }}
-                )
-            
-            return Command(
-                update ={
-                    "processed_data" : result,
-                    "current_chunk_index": current_chunk_index+1
-                },
-                goto="chunk_orchestrator"
             )
-            
+        
+        chunks_ids_collection.update_one(
+            {"chunk_index":current_chunk_index},
+            {"$set":{
+                "status":"complete"
+            }}
+            )
+        
+        return Command(
+            update ={
+                "processed_data" : result,
+                "current_chunk_index": current_chunk_index+1
+            },
+            goto="chunk_orchestrator"
+        )
     except Exception as e:
         keyword_collection.update_one(
             {"_id": state["execution_id"]},
