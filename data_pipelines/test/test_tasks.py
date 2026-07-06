@@ -1,5 +1,5 @@
 from data_pipelines.tasks.keyword_pipeline import keyword_pipeline
-from data_pipelines.tasks.recipe_ingest import recipe_ingest
+from data_pipelines.tasks.recipe_ingest import recipe_ingest, send_metadata_task
 from data_pipelines.recipe_worker.keyword_worker import keywords_generator
 from data_pipelines.db.mongo import get_recipes_collection
 from data_pipelines.db.mongo import recipe_collection

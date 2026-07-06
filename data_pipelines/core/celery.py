@@ -17,7 +17,10 @@ celery_app = Celery(
     broker="redis://redis:6379/0",
     backend="redis://redis:6379/0",
     # include=["data_pipelines.tasks.recipe_ingest","data_pipelines.tasks.keyword_pipeline"]
-    include=["data_pipelines.recipe_worker.keyword_worker"]
+    include=[
+        "data_pipelines.recipe_worker.keyword_worker",
+        "data_pipelines.tasks.recipe_ingest"
+        ]
 )
 
 # celery_app.conf.beat_schedule = BEAT_SCHEDULE
