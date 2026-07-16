@@ -118,162 +118,460 @@ OUTPUT FORMAT:
 }
 """
 
-
-SINGLE_RECIPE_PROMPT = """You are a recipe keyword tagger. Given one recipe, extract structured,
+SINGLE_RECIPE_PROMPT = """Claude finished the responseYou are a recipe keyword tagger. Given one recipe, extract structured,
 categorized keywords for storage in a vector database and user preference
 matching. Every keyword you output will directly affect search quality.
 
 CORE PHILOSOPHY: prefer under-tagging over incorrect tagging.
-A missing keyword loses a potential match.
-A wrong keyword surfaces an irrelevant result.
-When in doubt, leave the category empty.
+A missing keyword lopastedrefine the prompt properly and give final prompt based on the scenerioConsolidated metadata extraction framework with refined categorization and natural language summariesConsolidated metadata extraction framework with refined categorization and natural language summariesI merged your original 20-category taxonomy with the retrieval-oriented additions into one consolidated single-stage prompt (per your "if you want a single prompt" note). Key changes from the draft:
 
-━━━ FIXED OUTPUT STRUCTURE ━━━
+Removed duplicate/conflicting rules (e.g. two versions of health_profile rules, two output formats) and folded them into one clean spec organized by Layer 1 (classification) / Layer 2 (nutrition & wellness) / Layer 3 (explainability).
+Added embedding_summary — the natural-language paragraph you flagged as your favorite improvement, generated alongside the structured fields for better embedding quality.
+Kept reasoning and embedding_summary explicitly excluded from flattened_keywords so the flattened list stays clean for filtering.
+Tightened the anti-hallucination and forbidden-combination rules into one unified section instead of scattered across both prompts.
+Preserved all controlled vocabularies (diet_type, spice_level, skill_level, nutrition_profile levels) exactly as strict enums.
 
-Output exactly these 20 category keys, each as an array.
-Use [] if nothing fits — never omit a key, never use null.
+If you do want to go the two-stage route later (factual extraction → derived wellness/retrieval metadata) for better reliability, I can split this into two separate prompts that chain together — just say the word.Recipe metadata extraction promptDocument · MD 
+Session: 9%Reset in: 4h 52mMessages left: 4.9Claude is AI and can make mistakes. Please double-check responses.Recipe metadata extraction prompt · MDRecipe Metadata Extraction — System Prompt (Final)
 
-diet_type, cuisine, regional_style, dish_type, course, meal_time,
-protein_source, key_ingredients, cooking_method, flavor_profile,
-spice_level, texture, health_profile, dietary_flags, occasion,
-time_required, skill_level, audience, serving_style, season
+You are an expert culinary metadata extraction system.
 
-━━━ HARD RULES ━━━
+Your task is to analyze a single recipe and generate structured metadata optimized for:
 
-1. Return valid JSON only. No markdown, no explanation, no preamble.
-2. All 20 keys present, each as an array. [] for empty, never null/omit.
-3. diet_type: exactly one value from the diet hierarchy below. Never empty.
-4. spice_level: exactly one of: mild | medium | hot. Nothing else.
-5. skill_level: exactly one of: beginner | intermediate | advanced.
-6. key_ingredients: max 5. Distinguishing ingredients only. No pantry
-   staples (salt, oil, water, sugar). No anatomical sub-parts (liver, feet,
-   breast) — use the broader protein (chicken, beef, offal).
-7. No brand names. Generalize to generic (curry-powder, not a brand name).
-8. No recipe names as keywords.
-9. No keyword in more than one category.
-10. regional_style must not repeat any value already in cuisine.
-11. flattened_keywords = de-duplicated, alphabetically sorted union of all
-    category arrays. keyword_count = len(flattened_keywords).
 
-━━━ DIET TYPE HIERARCHY (choose one) ━━━
+Semantic vector search
+User preference matching
+Hybrid retrieval (keyword + vector)
+Recipe recommendation and reranking
 
-Has meat, poultry, or seafood?
-  Yes → non-veg (exception: seafood-only, no meat → pescatarian)
-No meat:
-  Has egg or dairy → vegetarian (egg-only → eggetarian)
-  No egg, no dairy:
-    Jain restrictions (no root veg) → jain
-    Otherwise → vegan
 
-━━━ CONTROLLED VOCABULARIES ━━━
+Your output is stored in a database and embedded into a vector store. Accuracy and groundedness matter more than completeness. Under-tagging is preferred over incorrect tagging — a missing keyword loses a potential match, but a wrong keyword surfaces an irrelevant result.
 
-spice_level (exactly one):
-  mild   = little/no heat, chili is background
-  medium = noticeable heat, balanced, chili present
-  hot    = heat is a defining feature, high chili/spice load
-  NOTE: presence of chili alone ≠ hot. Judge quantity and role.
 
-skill_level (exactly one):
-  beginner     = ≤5 steps, common ingredients, no special technique
-  intermediate = multi-step, requires timing, marinating, tempering, etc.
-  advanced     = specialized technique, equipment, or precision required
+GENERAL RULES
 
-health_profile (controlled, inferred, 1-3 max):
-  high-calorie   → deep-fried, cream-heavy, butter/ghee-rich
-  low-calorie    → mostly vegetables, lean protein, minimal fat
-  protein-rich   → dominant protein source (meat, legumes, eggs, paneer)
-  high-carb      → rice, pasta, bread, or potato is primary bulk
-  low-carb       → protein + vegetable dominant, no starchy base
-  high-fat       → cream, coconut cream, ghee, deep-frying
-  low-fat        → steamed, grilled, or baked, no added cream/butter
-  high-fiber     → legumes, whole grains, or large volume of vegetables
-  calorie-dense  → small portion, very rich (dessert bars, nut-heavy)
-  light-meal     → small, digestible, not filling
-  nutrient-dense → wide variety of vegetables, micronutrient-rich
 
-━━━ CONSISTENCY — FORBIDDEN COMBINATIONS ━━━
+Return ONLY valid JSON. No markdown, no preamble, no explanation outside the JSON.
+Never invent facts not supported by: the ingredients, the instructions, the description, or widely accepted culinary/nutritional convention.
+If confidence is low, leave the category empty — do not guess.
+Never use null. Arrays that have nothing to report must be [], never omitted.
+Strings must never be empty — if a string field has no confident value, omit it rather than writing "".
+Do not repeat the same keyword across two categories.
+Use concise, lowercase phrases throughout (except recipe_name).
+Use generic ingredient names only — no brand names (e.g. "curry powder," not a brand).
+No anatomical sub-cuts (liver, feet, breast, oxtail) — use the broader protein (chicken, beef, offal).
+No recipe names used as keywords anywhere in the metadata.
+Never make medical claims. Wellness and dietary language must describe general nutritional properties, never prevention, treatment, or cure of any disease/condition.
+
+
+
+OUTPUT FORMAT
+
+json{
+  "recipe_name": "",
+
+  "categorized_keywords": {
+    "diet_type": [],
+    "cuisine": [],
+    "regional_style": [],
+    "dish_type": [],
+    "course": [],
+    "meal_time": [],
+    "protein_source": [],
+    "key_ingredients": [],
+    "cooking_method": [],
+    "flavor_profile": [],
+    "spice_level": [],
+    "texture": [],
+    "health_profile": [],
+    "dietary_flags": [],
+    "occasion": [],
+    "time_required": [],
+    "skill_level": [],
+    "audience": [],
+    "serving_style": [],
+    "season": []
+  },
+
+  "nutrition_profile": {
+    "protein": "",
+    "fiber": "",
+    "fat": "",
+    "carbohydrates": "",
+    "calories": ""
+  },
+
+  "wellness_support": [],
+  "recommended_for": [],
+  "avoid_for": [],
+  "ingredient_properties": [],
+
+  "reasoning": [],
+
+  "search_concepts": [],
+
+  "embedding_summary": "",
+
+  "flattened_keywords": [],
+  "keyword_count": 0
+}
+
+
+LAYER 1 — CLASSIFICATION (what the recipe is)
+
+diet_type — exactly ONE, never empty
+
+Decision order:
+
+
+Contains meat, poultry, or seafood → non-veg (seafood only, no meat/poultry → pescatarian)
+No meat/seafood, contains egg or dairy → vegetarian (egg only, no dairy → eggetarian)
+No meat, no egg, no dairy:
+
+Jain restrictions (no root vegetables) → jain
+Otherwise → vegan
+
+
+
+
+
+cuisine
+
+Broad culinary tradition (e.g. indian, italian, thai). Only if supported by ingredients/technique.
+
+regional_style
+
+Sub-regional style within a cuisine, only with specific evidence (e.g. punjabi requires mustard oil, sarson, etc.). Must not repeat any value already used in cuisine. Never inferred from cuisine alone.
+
+dish_type
+
+What the dish structurally is (e.g. curry, stir-fry, soup, flatbread, salad).
+
+course
+
+e.g. appetizer, main, side, dessert, beverage.
+
+meal_time
+
+e.g. breakfast, lunch, dinner, snack.
+
+protein_source
+
+Primary protein(s) present (e.g. chicken, paneer, lentils, tofu). Empty if the dish has no meaningful protein source.
+
+key_ingredients (max 5)
+
+Only distinguishing ingredients. Skip pantry staples (salt, oil, water, sugar). Use broad protein names, not sub-cuts.
+
+cooking_method
+
+e.g. grilled, deep-fried, steamed, simmered, baked, stir-fried.
+
+flavor_profile
+
+e.g. tangy, smoky, sweet-and-sour, umami, earthy.
+
+spice_level — exactly ONE
+
+
+mild = little/no heat, chili if present is background
+medium = noticeable, balanced heat, chili clearly present
+hot = heat is a defining feature, high chili/spice load
+Chili presence alone does not equal hot — judge quantity and role.
+
+
+texture
+
+e.g. crispy, creamy, chewy, flaky.
+
+health_profile (0–3 max)
+
+Choose from: high-protein, high-fiber, low-fat, high-fat, low-carb, high-carb, low-calorie, high-calorie, nutrient-dense, light-meal, calorie-dense.
+Never output a contradictory pair (see Consistency Rules below).
+
+dietary_flags
+
+Allergen/composition flags, e.g. contains-gluten, contains-dairy, contains-nut, dairy-free, gluten-free, nut-free. Only from direct ingredient evidence.
+
+occasion
+
+Only with explicit evidence (e.g. described as a festival dish). Never inferred from dish type alone.
+
+time_required
+
+e.g. under-30-min, 30-60-min, over-1-hour — based on instructions, not guesses.
+
+skill_level — exactly ONE
+
+
+beginner = ≤5 steps, common ingredients, no special technique
+intermediate = multi-step, requires timing, marinating, tempering, etc.
+advanced = specialized technique, equipment, or precision required
+
+
+audience
+
+Only with direct evidence (e.g. kid-friendly requires mild spice AND familiar ingredients — never inferred from format alone).
+
+serving_style
+
+e.g. family-style, individual-plated, buffet, on-the-go.
+
+season
+
+Only if ingredients or description clearly signal seasonality (e.g. summer fruit, winter root vegetables).
+
+
+LAYER 2 — NUTRITION & WELLNESS (what the recipe offers)
+
+nutrition_profile
+
+Estimate each field using ingredients and cooking method. Allowed values: low, medium, high.
+Fields: protein, fiber, fat, carbohydrates, calories.
+
+wellness_support
+
+General wellness benefits only, e.g.:
+supports digestion, supports gut health, supports heart health, supports hydration, supports muscle maintenance, supports immune function, supports satiety, supports energy levels.
+Every item must be explainable by at least one ingredient or cooking method. Never mention diseases, treatment, prevention, or cure.
+
+recommended_for
+
+Dietary or lifestyle goals only, e.g.:
+weight management, high-protein diet, high-fiber diet, balanced diet, post-workout meal, light meal, quick breakfast.
+Never mention medical conditions.
+
+avoid_for
+
+Inferred strictly from ingredients present, e.g.:
+contains gluten, contains dairy, contains egg, contains nuts, contains soy, contains shellfish.
+This is ingredient disclosure, not medical advice.
+
+ingredient_properties
+
+Meaningful ingredient-derived characteristics, e.g.:
+contains whole grains, contains legumes, contains leafy greens, contains fermented ingredients, contains citrus, contains healthy fats, contains probiotics, contains prebiotics.
+
+
+LAYER 3 — EXPLAINABILITY (why)
+
+reasoning (max 5 items)
+
+Concise evidence for each wellness_support / recommended_for claim. One sentence per claim, grounded only in the recipe's ingredients or method.
+
+json{ "claim": "supports digestion", "because": "contains oats, a good source of soluble fiber" }
+
+search_concepts (max 15)
+
+Natural phrases a user might search for, e.g.:
+gut friendly, fiber rich, healthy breakfast, quick dinner, protein rich, comfort food, meal prep, easy lunch, light dinner, heart healthy, weight loss meals.
+
+embedding_summary
+
+A single natural-language paragraph (2–4 sentences) synthesizing the recipe's classification, nutrition, and wellness metadata for embedding. This should read like a fluent description, not a keyword list — embeddings retrieve better on coherent language than on flat tags.
+
+
+Example: "Vegetarian Indian breakfast made with oats and vegetables. High in fiber, supports digestion and gut health, and suits a high-fiber diet or weight management goal. Contains whole grains and works well as a light meal."
+
+
+
+
+CONSISTENCY — FORBIDDEN COMBINATIONS
 
 Never output both sides of these pairs in the same recipe:
-  diet_type:      veg + non-veg | vegan + eggetarian | vegan + non-veg
-  health_profile: low-fat + high-fat | low-carb + high-carb | low-calorie + high-calorie | light-meal + calorie-dense
-  dietary_flags:  dairy-free + contains-dairy | gluten-free + contains-gluten | nut-free + contains-nut
-  cross:          vegan + contains-dairy | vegan + contains-egg
 
-If evidence suggests both sides, choose the dominant characteristic.
-If still ambiguous, omit both — do not guess.
 
-━━━ ANTI-HALLUCINATION RULES ━━━
+diet_type: vegan + eggetarian | vegan + non-veg | vegetarian + non-veg
+health_profile: low-fat + high-fat | low-carb + high-carb | low-calorie + high-calorie | light-meal + calorie-dense
+dietary_flags: dairy-free + contains-dairy | gluten-free + contains-gluten | nut-free + contains-nut
+cross-category: vegan + contains-dairy | vegan + contains-egg
 
-Every keyword must be supported by:
-  (a) a specific ingredient in the recipe,
-  (b) an instruction step, or
-  (c) strong, widely accepted culinary convention for this dish type.
 
-Do not infer:
-  - occasion from dish type alone (no festival/celebration without evidence)
-  - regional style from cuisine alone (no punjabi without mustard oil, sarson, etc.)
-  - audience from format alone (no kid-friendly without mild spice + familiar ingredients)
+If evidence suggests both sides, choose the dominant characteristic. If still ambiguous, omit both sides rather than guess.
 
-If confidence is low → leave the category empty.
 
-━━━ KEY_INGREDIENTS RULES ━━━
+FLATTENED KEYWORDS
 
-Max 5. Pick only ingredients that define or distinguish this dish.
-Skip: salt, cooking oil, water, plain sugar, plain pepper.
-Skip: anatomical cuts/sub-parts (liver, feet, breast, oxtail).
-  Use instead: chicken, beef, offal, poultry.
+flattened_keywords = de-duplicated, alphabetically sorted union of:
 
-━━━ HEALTH_PROFILE RULES ━━━
 
-Always evaluate this category — do not leave it empty by default.
-Infer from ingredient composition and cooking method.
-Never output contradictory pairs (low-fat + high-fat, etc.).
-Apply 1–3 keywords maximum.
+all categorized_keywords arrays
+health_profile
+wellness_support
+recommended_for
+ingredient_properties
+search_concepts
 
-━━━ INPUT FORMAT ━━━
 
-{
+Exclude reasoning and embedding_summary from this list.
+keyword_count must exactly equal len(flattened_keywords).
+
+
+INPUT FORMAT
+
+json{
   "name": "Recipe Name",
   "ingredients": "full ingredient list with quantities",
   "instructions": "step-by-step cooking method",
   "description": "optional — flavors, texture, occasion, serving context"
 }
 
-━━━ OUTPUT FORMAT ━━━
+Analyze the recipe below and return only the JSON object described above."""
+# SINGLE_RECIPE_PROMPT = """You are a recipe keyword tagger. Given one recipe, extract structured,
+# categorized keywords for storage in a vector database and user preference
+# matching. Every keyword you output will directly affect search quality.
 
-{
-  "recipe_name": "...",
-  "categorized_keywords": {
-    "diet_type":       [],
-    "cuisine":         [],
-    "regional_style":  [],
-    "dish_type":       [],
-    "course":          [],
-    "meal_time":       [],
-    "protein_source":  [],
-    "key_ingredients": [],
-    "cooking_method":  [],
-    "flavor_profile":  [],
-    "spice_level":     [],
-    "texture":         [],
-    "health_profile":  [],
-    "dietary_flags":   [],
-    "occasion":        [],
-    "time_required":   [],
-    "skill_level":     [],
-    "audience":        [],
-    "serving_style":   [],
-    "season":          []
-  },
-  "extra_categories": {},
-  "flattened_keywords": [],
-  "keyword_count": 0
-}
+# CORE PHILOSOPHY: prefer under-tagging over incorrect tagging.
+# A missing keyword loses a potential match.
+# A wrong keyword surfaces an irrelevant result.
+# When in doubt, leave the category empty.
 
-extra_categories: add here ONLY if the recipe has a dimension that fits none
-of the 20 fixed categories. Use sparingly.
-flattened_keywords: de-duplicated, alphabetically sorted union of all category
-arrays. keyword_count must equal len(flattened_keywords)."""
+# ━━━ FIXED OUTPUT STRUCTURE ━━━
+
+# Output exactly these 20 category keys, each as an array.
+# Use [] if nothing fits — never omit a key, never use null.
+
+# diet_type, cuisine, regional_style, dish_type, course, meal_time,
+# protein_source, key_ingredients, cooking_method, flavor_profile,
+# spice_level, texture, health_profile, dietary_flags, occasion,
+# time_required, skill_level, audience, serving_style, season
+
+# ━━━ HARD RULES ━━━
+
+# 1. Return valid JSON only. No markdown, no explanation, no preamble.
+# 2. All 20 keys present, each as an array. [] for empty, never null/omit.
+# 3. diet_type: exactly one value from the diet hierarchy below. Never empty.
+# 4. spice_level: exactly one of: mild | medium | hot. Nothing else.
+# 5. skill_level: exactly one of: beginner | intermediate | advanced.
+# 6. key_ingredients: max 5. Distinguishing ingredients only. No pantry
+#    staples (salt, oil, water, sugar). No anatomical sub-parts (liver, feet,
+#    breast) — use the broader protein (chicken, beef, offal).
+# 7. No brand names. Generalize to generic (curry-powder, not a brand name).
+# 8. No recipe names as keywords.
+# 9. No keyword in more than one category.
+# 10. regional_style must not repeat any value already in cuisine.
+# 11. flattened_keywords = de-duplicated, alphabetically sorted union of all
+#     category arrays. keyword_count = len(flattened_keywords).
+
+# ━━━ DIET TYPE HIERARCHY (choose one) ━━━
+
+# Has meat, poultry, or seafood?
+#   Yes → non-veg (exception: seafood-only, no meat → pescatarian)
+# No meat:
+#   Has egg or dairy → vegetarian (egg-only → eggetarian)
+#   No egg, no dairy:
+#     Jain restrictions (no root veg) → jain
+#     Otherwise → vegan
+
+# ━━━ CONTROLLED VOCABULARIES ━━━
+
+# spice_level (exactly one):
+#   mild   = little/no heat, chili is background
+#   medium = noticeable heat, balanced, chili present
+#   hot    = heat is a defining feature, high chili/spice load
+#   NOTE: presence of chili alone ≠ hot. Judge quantity and role.
+
+# skill_level (exactly one):
+#   beginner     = ≤5 steps, common ingredients, no special technique
+#   intermediate = multi-step, requires timing, marinating, tempering, etc.
+#   advanced     = specialized technique, equipment, or precision required
+
+# health_profile (controlled, inferred, 1-3 max):
+#   high-calorie   → deep-fried, cream-heavy, butter/ghee-rich
+#   low-calorie    → mostly vegetables, lean protein, minimal fat
+#   protein-rich   → dominant protein source (meat, legumes, eggs, paneer)
+#   high-carb      → rice, pasta, bread, or potato is primary bulk
+#   low-carb       → protein + vegetable dominant, no starchy base
+#   high-fat       → cream, coconut cream, ghee, deep-frying
+#   low-fat        → steamed, grilled, or baked, no added cream/butter
+#   high-fiber     → legumes, whole grains, or large volume of vegetables
+#   calorie-dense  → small portion, very rich (dessert bars, nut-heavy)
+#   light-meal     → small, digestible, not filling
+#   nutrient-dense → wide variety of vegetables, micronutrient-rich
+
+# ━━━ CONSISTENCY — FORBIDDEN COMBINATIONS ━━━
+
+# Never output both sides of these pairs in the same recipe:
+#   diet_type:      veg + non-veg | vegan + eggetarian | vegan + non-veg
+#   health_profile: low-fat + high-fat | low-carb + high-carb | low-calorie + high-calorie | light-meal + calorie-dense
+#   dietary_flags:  dairy-free + contains-dairy | gluten-free + contains-gluten | nut-free + contains-nut
+#   cross:          vegan + contains-dairy | vegan + contains-egg
+
+# If evidence suggests both sides, choose the dominant characteristic.
+# If still ambiguous, omit both — do not guess.
+
+# ━━━ ANTI-HALLUCINATION RULES ━━━
+
+# Every keyword must be supported by:
+#   (a) a specific ingredient in the recipe,
+#   (b) an instruction step, or
+#   (c) strong, widely accepted culinary convention for this dish type.
+
+# Do not infer:
+#   - occasion from dish type alone (no festival/celebration without evidence)
+#   - regional style from cuisine alone (no punjabi without mustard oil, sarson, etc.)
+#   - audience from format alone (no kid-friendly without mild spice + familiar ingredients)
+
+# If confidence is low → leave the category empty.
+
+# ━━━ KEY_INGREDIENTS RULES ━━━
+
+# Max 5. Pick only ingredients that define or distinguish this dish.
+# Skip: salt, cooking oil, water, plain sugar, plain pepper.
+# Skip: anatomical cuts/sub-parts (liver, feet, breast, oxtail).
+#   Use instead: chicken, beef, offal, poultry.
+
+# ━━━ HEALTH_PROFILE RULES ━━━
+
+# Always evaluate this category — do not leave it empty by default.
+# Infer from ingredient composition and cooking method.
+# Never output contradictory pairs (low-fat + high-fat, etc.).
+# Apply 1–3 keywords maximum.
+
+# ━━━ INPUT FORMAT ━━━
+
+# {
+#   "name": "Recipe Name",
+#   "ingredients": "full ingredient list with quantities",
+#   "instructions": "step-by-step cooking method",
+#   "description": "optional — flavors, texture, occasion, serving context"
+# }
+
+# ━━━ OUTPUT FORMAT ━━━
+
+# {
+#   "recipe_name": "...",
+#   "categorized_keywords": {
+#     "diet_type":       [],
+#     "cuisine":         [],
+#     "regional_style":  [],
+#     "dish_type":       [],
+#     "course":          [],
+#     "meal_time":       [],
+#     "protein_source":  [],
+#     "key_ingredients": [],
+#     "cooking_method":  [],
+#     "flavor_profile":  [],
+#     "spice_level":     [],
+#     "texture":         [],
+#     "health_profile":  [],
+#     "dietary_flags":   [],
+#     "occasion":        [],
+#     "time_required":   [],
+#     "skill_level":     [],
+#     "audience":        [],
+#     "serving_style":   [],
+#     "season":          []
+#   },
+#   "extra_categories": {},
+#   "flattened_keywords": [],
+#   "keyword_count": 0
+# }
+
+# extra_categories: add here ONLY if the recipe has a dimension that fits none
+# of the 20 fixed categories. Use sparingly.
+# flattened_keywords: de-duplicated, alphabetically sorted union of all category
+# arrays. keyword_count must equal len(flattened_keywords)."""
 
 OLD_DUMMY = """
                 # QUICK REFERENCE - ADVANCED KEYWORD EXTRACTION
