@@ -1,29 +1,20 @@
 
 services:
 
-  db:
-    image: postgres:15
-    container_name: etl_db
+  mongo:
+    image: mongo:7
+    container_name: etl_mongo
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DEV_DB_USER}
-      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD}
-      POSTGRES_DB: ${DEV_DB_NAME}
     ports:
-      - "${DEV_DB_PORT}:5432"
-    command: ["postgres", "-p", "5432"]
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     env_file:
       - .env
     networks:
-      - backend_network
+      - etl_network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -h localhost -p 5432 -U ${DEV_DB_USER} -d ${DEV_DB_NAME}",
-        ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -39,7 +30,7 @@ services:
     ports:
       - "${REDIS_PORT}:6379"
     networks:
-      - backend_network
+      - etl_network
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "6379", "ping"]
       interval: 5s
@@ -50,31 +41,35 @@ services:
     build: .
     container_name: etl_worker
     restart: unless-stopped
-    command: celery -A celery_app worker --loglevel=info
+    command: celery -A data_pipelines.core.celery.celery_app worker --loglevel=info
+    volumes:
+      - .:/app
     depends_on:
       - redis
-      - db
+      - mongo
     env_file:
       - .env
     networks:
-      - backend_network
+      - etl_network
 
   celery_beat:
     build: .
     container_name: etl_beat
     restart: unless-stopped
-    command: celery -A celery_app beat --loglevel=info
+    command: celery -A data_pipelines.core.celery.celery_app beat --loglevel=info
+    volumes:
+      - .:/app
     depends_on:
       - redis
-      - db
+      - mongo
     env_file:
       - .env
     networks:
-      - backend_network
+      - etl_network
 
 volumes:
-  db_data:
+  mongo_data:
 
 networks:
-  backend_network:
-    external: true
+  etl_network:
+    external: false

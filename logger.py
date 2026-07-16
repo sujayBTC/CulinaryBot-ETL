@@ -1,8 +1,6 @@
-# app/core/logger.py
-
 import logging
 
-logger = logging.getLogger("food_app")
+logger = logging.getLogger("etl_app")
 logger.setLevel(logging.INFO)
 
 handler = logging.StreamHandler()
