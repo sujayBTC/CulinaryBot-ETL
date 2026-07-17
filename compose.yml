@@ -13,11 +13,11 @@ services:
       - .env
     networks:
       - etl_network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+    # healthcheck:
+    #   test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+    #   interval: 5s
+    #   timeout: 5s
+    #   retries: 5
 
   redis:
     image: redis/redis-stack:latest
@@ -72,4 +72,4 @@ volumes:
 
 networks:
   etl_network:
-    external: false
+    external: true

@@ -19,7 +19,8 @@ celery_app = Celery(
     # include=["data_pipelines.tasks.recipe_ingest","data_pipelines.tasks.keyword_pipeline"]
     include=[
         "data_pipelines.recipe_worker.keyword_worker",
-        "data_pipelines.tasks.recipe_ingest"
+        "data_pipelines.tasks.recipe_ingest",
+        "data_pipelines.tasks.user_preference_task"
         ]
 )
 
