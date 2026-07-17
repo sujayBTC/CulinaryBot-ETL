@@ -24,8 +24,8 @@ import time
 
 
 
-send_user_preference_data.delay()
-print("triger send send user preference task=================>")
+# send_user_preference_data.delay()
+# print("triger send send user preference task=================>")
 
 
 # batch_start = time.perf_counter()
@@ -45,5 +45,5 @@ print("triger send send user preference task=================>")
 #  )
 
 
-# send_metadata_task.delay()
-# print("triger recipe metadata send task=================================>")
+send_metadata_task.delay()
+print("triger recipe metadata send task=================================>")

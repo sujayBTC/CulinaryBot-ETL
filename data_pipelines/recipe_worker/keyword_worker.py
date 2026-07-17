@@ -73,7 +73,7 @@ async def run_keywords_generator(recipe_id_str):
             {"_id": recipe_id},
             {
                 "$set": {
-                    "meta_data": keys,
+                    "keyword": keys,
                     "metadata_status": "success",
                     "time_taken_seconds": round(recipe_time_taken, 2),
                     "completed_at": datetime.utcnow()

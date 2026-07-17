@@ -11,7 +11,7 @@ METADATA_COLLECTION = "metadata"
 
 async def run_recipe_ingest() -> dict:
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BACK_END_URL}/recipes")
+        response = await client.get(f"{BACK_END_URL}/all-recipes")
         response.raise_for_status()
 
     recipe_data = response.json()
@@ -28,6 +28,30 @@ async def run_recipe_ingest() -> dict:
     print("upsert successfully ========>")
     logger.info(f"Recipe ingest complete upserted_count={upserted_count}")
     return {"upserted_count": upserted_count}
+
+
+
+async def run_today_recipe_ingest() -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{BACK_END_URL}/today-recipes")
+        response.raise_for_status()
+
+    recipe_data = response.json()
+    
+    recipes = recipe_data.get("items", [])
+
+    logger.info(f"Fetched recipes from backend status={response.status_code}")
+
+    if not recipes:
+        logger.warning("No recipes returned from backend")
+        return {"upserted_count": 0}
+
+    upserted_count = upsert_recipe_batch(recipes)
+    print("upsert successfully ========>")
+    logger.info(f"Recipe ingest complete upserted_count={upserted_count}")
+    return {"upserted_count": upserted_count}
+
+
 
 async def send_recipe_metadata():
     limit = 100
@@ -74,6 +98,8 @@ async def send_recipe_metadata():
     else:
         print("no recipe to send")
     
+
+
 @celery_app.task(name="data_pipelines.recipe_ingest.tasks.recipe_ingest_task")
 def recipe_ingest():
     return run_async(run_recipe_ingest())
@@ -81,3 +107,7 @@ def recipe_ingest():
 @celery_app.task(name="data_pipelines.recipe_ingest.tasks.send_metadata_task")
 def send_metadata_task():
     return run_async(send_recipe_metadata())
+
+@celery_app.task(name="data_pipelines.recipe_ingest.tasks.today_recipe_ingest")
+def today_recipe_ingest():
+    return run_async(run_today_recipe_ingest())
