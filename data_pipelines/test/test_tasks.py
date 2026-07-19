@@ -53,8 +53,8 @@ from data_pipelines.core.celery import celery_app
 # print("triger recipe metadata send task=================================>")
 
 
-triger_conver_vector_task.delay()
-print("Triger convert vector task====================>")
+# triger_conver_vector_task.delay()
+# print("Triger convert vector task====================>")
 
 @celery_app.task
 def run_keyword_pipeline():

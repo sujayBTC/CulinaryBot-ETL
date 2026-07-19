@@ -47,9 +47,9 @@ async def all_conersation_ingest():
                 for item in items:
                     item["created_at"] = now
                     
-            user_preference_keyword_collection.insert_many(conversation_data["items"])
+                user_preference_keyword_collection.insert_many(items)
     
-            if not conversation_data["items"]:
+            if not items:
                 break
                 
             offset += limit
@@ -71,8 +71,10 @@ async def conersation_ingest():
             user_preference_keyword_collection = get_collection(CONVERSATION_COLLECTION)
 
             
-            if conversation_data["items"]:
-                user_preference_keyword_collection.insert_many(conversation_data["items"])
+            items = conversation_data.get("items", [])
+            
+            if items:
+                user_preference_keyword_collection.insert_many(items)
     
             if not conversation_data["items"]:
                 break

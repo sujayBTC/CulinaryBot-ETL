@@ -109,7 +109,10 @@ async def triger_convert_vector():
 
     logger.info(f"triger convert vector end-point, backend status={response.status_code}")
 
-    return {"upserted_count": response}
+    return {
+        "status_code": response.status_code,
+        "body": response.json()
+    }
 
 
 

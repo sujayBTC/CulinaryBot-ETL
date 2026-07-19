@@ -21,10 +21,10 @@ celery_app.conf.enable_utc = False
 celery_app.conf.beat_schedule = {
 "user-preference-pipeline": {
         "task": "data_pipelines.test.test_tasks.run_user_preference_pipeline",
-        "schedule": crontab(hour=0, minute=0),
+        "schedule": crontab(hour=19, minute=50),
     },
 "recipe-keyword-pipeline": {
         "task": "data_pipelines.test.test_tasks.start_keyword_pipeline",
-        "schedule": crontab(hour=0, minute=0),
+        "schedule": crontab(hour=20, minute=10),
     }
 }
