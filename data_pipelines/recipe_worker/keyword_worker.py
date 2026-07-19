@@ -34,17 +34,23 @@ async def run_keywords_generator(recipe_id_str):
             )
             return
 
-        if recipe.get("metadata_status") == "success":
+        if recipe.get("status") == "success":
             return
 
-        metadata_collection.insert_one(
+        metadata_collection.update_one(
+            {"_id": recipe_id},
             {
-            "_id": recipe_id,
-            "recipe_id": recipe.get("source_id"),
-            "status": "processing",    
-            "created_at": datetime.utcnow()
-            }
+                "$set": {
+                    "recipe_id": recipe.get("source_id"),
+                    "status": "processing",
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.utcnow()
+                }
+            },
+            upsert=True,
         )
+
         recipe_for_llm = {
                     k: v
                     for k, v in recipe.items()
@@ -67,7 +73,6 @@ async def run_keywords_generator(recipe_id_str):
             ]
         )
 
-        print(response.keywords)
         keys = response.keywords
         recipe_time_taken = time.perf_counter() - recipe_start_time
         metadata_collection.update_one(
@@ -120,7 +125,10 @@ async def run_keywords_generator(recipe_id_str):
             }
         )
 
-        raise
+        return {
+            "status": "failed",
+            "error": str(e)
+        }
 
 @celery_app.task()
 def keywords_generator(recipe_id_str):

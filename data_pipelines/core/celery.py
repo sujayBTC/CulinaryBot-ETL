@@ -14,13 +14,17 @@ celery_app = Celery(
         ]
 )
 
+
+celery_app.conf.timezone = "Asia/Kolkata"
+celery_app.conf.enable_utc = False
+
 celery_app.conf.beat_schedule = {
 "user-preference-pipeline": {
         "task": "data_pipelines.test.test_tasks.run_user_preference_pipeline",
-        "schedule": timedelta(minutes=15),
+        "schedule": crontab(hour=0, minute=0),
     },
-    "recipe-keyword-pipeline": {
+"recipe-keyword-pipeline": {
         "task": "data_pipelines.test.test_tasks.start_keyword_pipeline",
-        "schedule": timedelta(minutes=15),
+        "schedule": crontab(hour=0, minute=0),
     }
 }

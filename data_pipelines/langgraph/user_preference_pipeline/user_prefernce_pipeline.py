@@ -1,7 +1,7 @@
 import json
 import tiktoken
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from logger import logger
 
@@ -155,7 +155,7 @@ async def call_llm(data, previous_context=None) -> dict:
 async def user_preference_extraction():
     print("step 2 ============> USER PREFERENCE EXTRACTION")
     conversation_collection = get_collection(CONVERSATION_COLLECTION)
-    today_start = datetime.utcnow().replace(month=7, day=8,hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
     
     response = list(conversation_collection.find(

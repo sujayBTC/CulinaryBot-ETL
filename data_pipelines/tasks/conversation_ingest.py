@@ -4,7 +4,7 @@ from data_pipelines.db.mongo import get_collection
 from data_pipelines.core.base import run_async
 from data_pipelines.core.celery import celery_app
 from data_pipelines.core.config import BACK_END_URL
-
+from datetime import datetime, timezone
 
 CONVERSATION_COLLECTION = "conversations"
 USER_PREFERENCE_KEYWORD = "user_preference_keyword"
@@ -21,6 +21,38 @@ def remove_fields(obj):
         return [remove_fields(item) for item in obj]
     else:
         return obj
+    
+    
+async def all_conersation_ingest():
+    
+    print("step 1 ============> CONVERSATION INGEST")
+    limit = 100
+    offset = 0
+    while True:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BACK_END_URL}/user/all-conversations?limit={limit}&offset={offset}")
+            
+            response.raise_for_status()
+            
+            conversation_data = response.json()
+
+            
+            user_preference_keyword_collection = get_collection(CONVERSATION_COLLECTION)
+
+            items = conversation_data.get("items", [])
+            
+            if items:
+                now = datetime.now(timezone.utc).isoformat()
+                
+                for item in items:
+                    item["created_at"] = now
+                    
+            user_preference_keyword_collection.insert_many(conversation_data["items"])
+    
+            if not conversation_data["items"]:
+                break
+                
+            offset += limit
 
 async def conersation_ingest():
     
@@ -29,7 +61,7 @@ async def conersation_ingest():
     offset = 0
     while True:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACK_END_URL}/user/all-conversations?limit={limit}&offset={offset}")
+            response = await client.get(f"{BACK_END_URL}/user/today-conversations?limit={limit}&offset={offset}")
             
             response.raise_for_status()
             
