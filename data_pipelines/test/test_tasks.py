@@ -1,11 +1,14 @@
 from data_pipelines.tasks.keyword_pipeline import keyword_pipeline
 from data_pipelines.tasks.user_preference_task import user_preference_task, conversation_ingest_task, send_user_preference_data
-from data_pipelines.tasks.recipe_ingest import recipe_ingest, send_metadata_task
+from data_pipelines.tasks.recipe_ingest import recipe_ingest, send_metadata_task, today_recipe_ingest
 from data_pipelines.recipe_worker.keyword_worker import keywords_generator
 from data_pipelines.db.mongo import get_recipes_collection
 from data_pipelines.db.mongo import recipe_collection
 import datetime
 import time
+
+from celery import chain, chord
+from data_pipelines.core.celery import celery_app
 
 # recipe = recipe_ingest.delay()
 # print("Triggered recipe Ingest =======================================>")
@@ -21,7 +24,6 @@ import time
 
 # user_preference_task.delay()
 # print("User preference keyword extractor================================")
-
 
 
 # send_user_preference_data.delay()
@@ -45,5 +47,37 @@ import time
 #  )
 
 
-send_metadata_task.delay()
-print("triger recipe metadata send task=================================>")
+# send_metadata_task.delay()
+# print("triger recipe metadata send task=================================>")
+
+
+@celery_app.task
+def run_keyword_pipeline():
+    header = [
+        keywords_generator.s(str(recipe["_id"]))
+        for recipe in recipe_collection.find({"metadata_status": {"$ne": "success"}})
+    ]
+    
+    print("header=====>",header)
+
+    if not header:
+        return
+    
+    return chord(header)(send_metadata_task.si())
+
+
+@celery_app.task
+def start_keyword_pipeline():
+    return chain(
+        today_recipe_ingest.si(),
+        run_keyword_pipeline.si(),
+    ).delay()
+
+
+@celery_app.task
+def run_user_preference_pipeline():
+    chain(
+        conversation_ingest_task.si(),
+        user_preference_task.si(),
+        send_user_preference_data.si(),
+    ).delay()

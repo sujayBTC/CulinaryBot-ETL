@@ -23,21 +23,21 @@ def remove_fields(obj):
         return obj
 
 async def conersation_ingest():
+    
+    print("step 1 ============> CONVERSATION INGEST")
     limit = 100
     offset = 0
     while True:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACK_END_URL}/user/conversations?limit={limit}&offset={offset}")
+            response = await client.get(f"{BACK_END_URL}/user/all-conversations?limit={limit}&offset={offset}")
             
             response.raise_for_status()
             
             conversation_data = response.json()
-            
-            print("response===>",response)
+
             
             user_preference_keyword_collection = get_collection(CONVERSATION_COLLECTION)
-            
-            print("conversation_data[]===>",conversation_data["items"])
+
             
             if conversation_data["items"]:
                 user_preference_keyword_collection.insert_many(conversation_data["items"])
@@ -49,6 +49,7 @@ async def conersation_ingest():
 
 
 async def send_keyword():
+    print("step 3 ============> SEND KEYWORD")
     limit = 100
     skip = 0
     
@@ -68,18 +69,19 @@ async def send_keyword():
             .limit(limit)
         )
         
+        if not batch_response:
+            break
+
         cleaned_batch_response = [remove_fields(doc) for doc in batch_response]
         
         batch = {
             "data": cleaned_batch_response
         }
+
         
         async with httpx.AsyncClient() as client:
             response = await client.post(f"{BACK_END_URL}/user-preference", json=batch)
 
             response.raise_for_status()
-            
-            if not batch_response:
-                break
             
             skip += limit

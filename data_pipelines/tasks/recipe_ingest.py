@@ -32,6 +32,7 @@ async def run_recipe_ingest() -> dict:
 
 
 async def run_today_recipe_ingest() -> dict:
+    print("step 4 =====================> RUN TODAY RECIPE INGEST")
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{BACK_END_URL}/today-recipes")
         response.raise_for_status()
@@ -47,13 +48,13 @@ async def run_today_recipe_ingest() -> dict:
         return {"upserted_count": 0}
 
     upserted_count = upsert_recipe_batch(recipes)
-    print("upsert successfully ========>")
     logger.info(f"Recipe ingest complete upserted_count={upserted_count}")
     return {"upserted_count": upserted_count}
 
 
 
 async def send_recipe_metadata():
+    print("STEP 6 ====================> SEND RECIPE METADATA")
     limit = 100
     skip = 0
     
@@ -89,7 +90,6 @@ async def send_recipe_metadata():
                         response = await client.post(f"{BACK_END_URL}/recipes/metadata", json=payload)
                         response.raise_for_status()
                         
-                        print("response===>",response)
                                        
                     skip += limit
                     

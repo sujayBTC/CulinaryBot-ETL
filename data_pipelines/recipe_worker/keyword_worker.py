@@ -14,6 +14,7 @@ class RecipeWithKeywords(BaseModel):
 
 
 async def run_keywords_generator(recipe_id_str):
+    print("step 5 ==============> RUN KEYWORD GENERATOR")
     try:
         recipe_id = ObjectId(recipe_id_str)
         recipe = recipe_collection.find_one(
@@ -40,7 +41,7 @@ async def run_keywords_generator(recipe_id_str):
             {
             "_id": recipe_id,
             "recipe_id": recipe.get("source_id"),
-            "metadata_status": "processing",    
+            "status": "processing",    
             "created_at": datetime.utcnow()
             }
         )
@@ -74,7 +75,7 @@ async def run_keywords_generator(recipe_id_str):
             {
                 "$set": {
                     "keyword": keys,
-                    "metadata_status": "success",
+                    "status": "success",
                     "time_taken_seconds": round(recipe_time_taken, 2),
                     "completed_at": datetime.utcnow()
                 }
@@ -84,7 +85,7 @@ async def run_keywords_generator(recipe_id_str):
             {"_id": recipe_id},
             {
                 "$set": {
-                    "metadata_status": "success"
+                    "status": "success"
                 }
             }
         )
@@ -95,7 +96,7 @@ async def run_keywords_generator(recipe_id_str):
             {"_id": recipe_id},
             {
                 "$set": {
-                    "metadata_status": "failed"
+                    "status": "failed"
                 }
             }
         )
@@ -103,7 +104,7 @@ async def run_keywords_generator(recipe_id_str):
             {"_id": recipe_id},
             {
                 "$set": {
-                    "metadata_status": "failed"
+                    "status": "failed"
                 }
             }
         )

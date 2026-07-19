@@ -153,20 +153,20 @@ async def call_llm(data, previous_context=None) -> dict:
 
 
 async def user_preference_extraction():
-    
+    print("step 2 ============> USER PREFERENCE EXTRACTION")
     conversation_collection = get_collection(CONVERSATION_COLLECTION)
     today_start = datetime.utcnow().replace(month=7, day=8,hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
     
     response = list(conversation_collection.find(
         {
-            # "created_at": {
-            #     "$gte": today_start.isoformat(),
-            #     "$lt": tomorrow_start.isoformat(),
-            # },
-            # "status":{
-            #     "$ne": "processed"
-            # }
+            "created_at": {
+                "$gte": today_start.isoformat(),
+                "$lt": tomorrow_start.isoformat(),
+            },
+            "status":{
+                "$ne": "processed"
+            }
         },
         {
             "user_id": 1,
@@ -175,8 +175,6 @@ async def user_preference_extraction():
             "_id": 0,
         },
     ))
-    
-    print("response==========>",response)
     
     unique_message = remove_duplicates(response)
     
@@ -187,8 +185,6 @@ async def user_preference_extraction():
         user_messages = remove_unwanted_msg(group_users[single_user])
         
         chunks = create_token_chunks(user_messages)
-        
-        print("chunk len======>",len(chunks))
         
         final_preference = None 
         
@@ -219,5 +215,3 @@ async def user_preference_extraction():
             )
         except Exception as e:
             print(f"ERROR: {e}")
-    
-    # triger send_keyword to application logic
