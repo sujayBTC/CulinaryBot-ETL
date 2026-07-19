@@ -55,7 +55,7 @@ from data_pipelines.core.celery import celery_app
 def run_keyword_pipeline():
     header = [
         keywords_generator.s(str(recipe["_id"]))
-        for recipe in recipe_collection.find({"metadata_status": {"$ne": "success"}})
+        for recipe in recipe_collection.find({"status": {"$ne": "success"}})
     ]
     
     print("header=====>",header)
