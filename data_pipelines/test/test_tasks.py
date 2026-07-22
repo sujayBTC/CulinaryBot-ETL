@@ -1,6 +1,6 @@
 from data_pipelines.tasks.keyword_pipeline import keyword_pipeline
 from data_pipelines.tasks.user_preference_task import user_preference_task, today_conversation_ingest_task, send_user_preference_data, all_conersation_ingest_task
-from data_pipelines.tasks.recipe_ingest import all_recipe_ingest_task, send_metadata_task, today_recipe_ingest_task, triger_conver_vector_task
+from data_pipelines.tasks.recipe_ingest import all_recipe_ingest_task, send_metadata_task, today_recipe_ingest_task, triger_convert_vector_task
 from data_pipelines.recipe_worker.keyword_worker import keywords_generator
 from data_pipelines.db.mongo import get_recipes_collection
 from data_pipelines.db.mongo import recipe_collection
@@ -53,7 +53,7 @@ from data_pipelines.core.celery import celery_app
 # print("triger recipe metadata send task=================================>")
 
 
-# triger_conver_vector_task.delay()
+# triger_convert_vector_task.delay()
 # print("Triger convert vector task====================>")
 
 @celery_app.task
@@ -65,16 +65,16 @@ def run_keyword_pipeline():
     if not header:
         return
     
-    return chord(header)(send_metadata_task.si())
+    callback = chain(
+        send_metadata_task.si(),
+        triger_convert_vector_task.si(),
+    )
+    return chord(header)(callback)
 
 
 @celery_app.task
 def start_keyword_pipeline():
-    return chain(
-        today_recipe_ingest_task.si(),
-        run_keyword_pipeline.si(),
-        triger_conver_vector_task.si(),
-    ).delay()
+    run_keyword_pipeline.delay()
 
 
 @celery_app.task
