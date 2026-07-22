@@ -60,7 +60,7 @@ async def run_keywords_generator(recipe_id_str):
                         "updated_at"
                     ]
                 }
-        structured_llm = llm.with_structured_output(RecipeWithKeywords)
+        structured_llm = llm.with_structured_output(RecipeWithKeywords, method="function_calling")
 
         recipe_start_time = time.perf_counter()
         response = await structured_llm.ainvoke(
