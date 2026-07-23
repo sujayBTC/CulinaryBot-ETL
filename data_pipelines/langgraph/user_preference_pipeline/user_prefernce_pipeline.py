@@ -186,15 +186,20 @@ async def user_preference_extraction():
         
         chunks = create_token_chunks(user_messages)
         
-        final_preference = None 
+        user_preference_collection = get_collection(USER_PREFERENCE_KEYWORD)
+        
+        final_preference_response = user_preference_collection.find_one({"user_id":single_user})
+        
+        if final_preference_response:
+            final_preference = final_preference_response["keyword"]
+        else:
+            final_preference = None
         
         for chunk in chunks:
             final_preference = await call_llm(chunk, previous_context=final_preference)
     
         print(f"Final aggregated preference for {single_user}: {final_preference}")
 
-        
-        user_preference_collection = get_collection(USER_PREFERENCE_KEYWORD)
         
         try:
             user_preference_collection.update_one(
@@ -215,3 +220,4 @@ async def user_preference_extraction():
             )
         except Exception as e:
             print(f"ERROR: {e}")
+            raise e
