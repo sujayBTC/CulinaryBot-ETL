@@ -95,18 +95,13 @@ async def send_recipe_metadata():
 
             skip += limit
             
-            return {
-                "message":"inserted successfully"
-            }
-            
     except Exception as e:
         print("ERROR: ",e)
-        raise e
+    # else:
+    #     print("no recipe to send")
     
     
 async def triger_convert_vector():
-    
-    print("TRIGER CONVERT VECTOR==================>")
     async with httpx.AsyncClient() as client:
         response = await client.post(f"{BACK_END_URL}/add-vectors-in-pgvector")
         response.raise_for_status()
@@ -134,5 +129,5 @@ def today_recipe_ingest_task():
     return run_async(run_today_recipe_ingest())
 
 @celery_app.task(name="data_pipelines.recipe_ingest.tasks.triger_conver_vector_task")
-def triger_convert_vector_task():
+def triger_conver_vector_task():
     return run_async(triger_convert_vector())
