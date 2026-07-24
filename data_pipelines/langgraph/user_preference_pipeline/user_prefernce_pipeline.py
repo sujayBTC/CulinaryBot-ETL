@@ -13,16 +13,15 @@ from data_pipelines.db.mongo import get_collection
 
 CONVERSATION_COLLECTION = 'conversations'
 USER_PREFERENCE_KEYWORD = 'user_preference_keyword'
+DB_PREFERENCE_FIELD = 'user_preferences'
 
 MODEL_NAME = "gpt-4o"
 MODEL_CONTEXT_WINDOW = 128_000
-RESERVED_TOKENS = (
-    5_000  # system prompt
-    + 20_000  # existing keyword dictionary
-    + 5_000  # expected response
-    + 8_000  # safety buffer
+FIXED_RESERVED_TOKENS = (
+    5_000   # system prompt
+    + 5_000   # expected response
+    + 8_000   # safety buffer
 )
-MAX_CHUNK_TOKENS = MODEL_CONTEXT_WINDOW - RESERVED_TOKENS
 
 try:
     encoder = tiktoken.encoding_for_model(MODEL_NAME)
@@ -39,14 +38,15 @@ def count_tokens(text: str) -> int:
 
 
 def remove_duplicates(messages):
-    seen = set()
+
     unique = []
+    prev_key = None
 
     for m in messages:
-        key = (m["user_id"], m["content"].lower())
-        if key not in seen:
-            seen.add(key)
+        key = (m["user_id"], m["direction"], m["content"].strip().lower())
+        if key != prev_key:
             unique.append(m)
+        prev_key = key
 
     return unique
 
@@ -56,8 +56,8 @@ def group_by_user(messages):
 
     for m in messages:
         user_map[m["user_id"]].append({
-        "user":"user" if m["direction"] == "inbound" else "bot",
-        "content": m["content"]
+            "user": "user" if m["direction"] == "inbound" else "bot",
+            "content": m["content"],
         })
 
     return user_map
@@ -69,27 +69,31 @@ def remove_unwanted_msg(conversation):
     for msg in conversation:
         text = msg["content"].strip()
 
-        # Remove welcome/greeting message
         if text.startswith("Welcome to your very own add a twist kitchen companion"):
             continue
 
-        # Remove "View Recipe" commands
         if text.startswith("View Recipe"):
             continue
 
-        # Optional: remove "help me decide"
         if msg["user"] == "user" and text.lower() == "help me decide":
             continue
 
         messages.append({
             "user": msg["user"],
-            "content": text
+            "content": text,
         })
-    
+
     return messages
-        
-        
-def create_token_chunks(messages: list[dict]) -> list[list[dict]]:
+
+
+def effective_chunk_budget(previous_context: dict) -> int:
+    
+    previous_context_tokens = count_tokens(json.dumps(previous_context or {}))
+    budget = MODEL_CONTEXT_WINDOW - FIXED_RESERVED_TOKENS - previous_context_tokens
+    return max(budget, 2_000)
+
+
+def create_token_chunks(messages: list[dict], max_chunk_tokens: int) -> list[list[dict]]:
     chunks = []
     current_chunk = []
     current_tokens = 0
@@ -98,17 +102,16 @@ def create_token_chunks(messages: list[dict]) -> list[list[dict]]:
     for message in messages:
         msg_token = count_tokens(message_to_text(message))
 
-        if msg_token > MAX_CHUNK_TOKENS:
+        if msg_token > max_chunk_tokens:
             user_id = message.get("user_id", "Unknown")
-            print(
-                f"Skipping recipe '{user_id}' "
-                f"because it exceeds token limit "
-                f"({msg_token} > {MAX_CHUNK_TOKENS} tokens)"
+            logger.warning(
+                f"Skipping message for user '{user_id}' — exceeds token limit "
+                f"({msg_token} > {max_chunk_tokens} tokens)"
             )
             skipped_count += 1
             continue
 
-        if current_tokens + msg_token > MAX_CHUNK_TOKENS:
+        if current_tokens + msg_token > max_chunk_tokens:
             if current_chunk:
                 chunks.append(current_chunk)
             current_chunk = [message]
@@ -121,35 +124,49 @@ def create_token_chunks(messages: list[dict]) -> list[list[dict]]:
         chunks.append(current_chunk)
 
     if skipped_count > 0:
-        print(f"Skipped {skipped_count} oversized recipes")
+        logger.warning(f"Skipped {skipped_count} oversized messages")
 
     return chunks
 
 
-async def call_llm(data, previous_context=None) -> dict:
-    
+async def call_llm(data, previous_context=None, existing_role="anchor", max_retries=2) -> dict | None:
+
     if not previous_context:
         previous_context = {}
 
-    data = {"conversation":data}
+    conversation_payload = json.dumps({"conversation": data})
+    previous_profile_payload = json.dumps(previous_context)
     
-    llm_response = await llm.ainvoke(
-        [
-            SystemMessage(content=USER_PREFERENCE_PROMPT),
-            HumanMessage(content=USER_PREFERENCE_USER_PROMPT.format(previous_profile=previous_context,conversation=json.dumps(data))),
-        ]
+    prompt = (
+        USER_PREFERENCE_USER_PROMPT
+        .replace("__EXISTING_ROLE__", existing_role)
+        .replace("__EXISTING_PROFILE__", previous_profile_payload)
+        .replace("__CONVERSATION__", conversation_payload)
     )
-    
-    content = llm_response.content.strip()
-    
-    try:
-        final_llm = json.loads(llm_response.content)
-        
-    except json.JSONDecodeError:
-        print(content)
-        final_llm = {}
-    
-    return final_llm
+
+    for attempt in range(max_retries + 1):
+        llm_response = await llm.ainvoke(
+            [
+                SystemMessage(content=USER_PREFERENCE_PROMPT),
+                HumanMessage(
+                    content=prompt
+                ),
+            ]
+        )
+
+        content = llm_response.content.strip()
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning(
+                f"JSON parse failure on attempt {attempt + 1}/{max_retries + 1}. "
+                f"Raw content: {content[:500]}"
+            )
+            continue
+
+    logger.error("call_llm exhausted retries without valid JSON; caller must preserve previous state.")
+    return None
 
 
 async def user_preference_extraction():
@@ -157,67 +174,87 @@ async def user_preference_extraction():
     conversation_collection = get_collection(CONVERSATION_COLLECTION)
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
-    
+
     response = list(conversation_collection.find(
         {
             "created_at": {
                 "$gte": today_start.isoformat(),
                 "$lt": tomorrow_start.isoformat(),
             },
-            "status":{
-                "$ne": "processed"
-            }
+            "status": {"$ne": "processed"},
         },
         {
             "user_id": 1,
             "direction": 1,
             "content": 1,
+            "created_at": 1,
             "_id": 0,
         },
-    ))
-    
-    unique_message = remove_duplicates(response)
-    
-    group_users = group_by_user(unique_message)
-    
-    for single_user in group_users.keys():
-        
-        user_messages = remove_unwanted_msg(group_users[single_user])
-        
-        chunks = create_token_chunks(user_messages)
-        
-        user_preference_collection = get_collection(USER_PREFERENCE_KEYWORD)
-        
-        final_preference_response = user_preference_collection.find_one({"user_id":single_user})
-        
-        if final_preference_response:
-            final_preference = final_preference_response["keyword"]
-        else:
-            final_preference = None
-        
-        for chunk in chunks:
-            final_preference = await call_llm(chunk, previous_context=final_preference)
-    
-        print(f"Final aggregated preference for {single_user}: {final_preference}")
+    ).sort("created_at", 1))
 
-        
+
+    unique_message = remove_duplicates(response)
+    group_users = group_by_user(unique_message)
+
+    user_preference_collection = get_collection(USER_PREFERENCE_KEYWORD)
+
+    for single_user in group_users.keys():
+
+        user_messages = remove_unwanted_msg(group_users[single_user])
+
+        if not user_messages:
+
+            conversation_collection.update_many(
+                {"user_id": single_user},
+                {"$set": {"status": "processed"}},
+            )
+            continue
+
+        existing_doc = user_preference_collection.find_one({"user_id": single_user})
+        anchor_profile = existing_doc[DB_PREFERENCE_FIELD] if existing_doc else {}
+
+        chunk_budget = effective_chunk_budget(anchor_profile)
+        chunks = create_token_chunks(user_messages, chunk_budget)
+
+        if not chunks:
+            continue
+
+        working_profile = anchor_profile
+        merge_failed = False
+
+        for i, chunk in enumerate(chunks):
+            role = "anchor" if i == 0 else "draft"
+            result = await call_llm(chunk, previous_context=working_profile, existing_role=role)
+
+            if result is None:
+                logger.error(
+                    f"Skipping chunk {i} for user {single_user} due to repeated "
+                    f"JSON parse failure. Preserving prior state for this user."
+                )
+                merge_failed = True
+                continue
+
+            working_profile = result
+
+        print(f"Final aggregated preference for {single_user}: {working_profile}")
+
+        if merge_failed:
+            logger.error(f"user_preference_extraction: partial merge failure for {single_user}")
+
         try:
             user_preference_collection.update_one(
                 {"user_id": single_user},
-                {"$set": {"user_preferences": final_preference},
-                "$setOnInsert": {
-                    "cdate": datetime.utcnow()
-                }},
+                {
+                    "$set": {DB_PREFERENCE_FIELD: working_profile},
+                    "$setOnInsert": {"cdate": datetime.utcnow()},
+                },
                 upsert=True,
             )
+
             conversation_collection.update_many(
                 {"user_id": single_user},
-                {"$set": {"status": "processed"},
-                "$setOnInsert": {
-                    "udate": datetime.utcnow()
-                }},
-                upsert=True,
+                {"$set": {"status": "processed", "udate": datetime.utcnow()}},
             )
         except Exception as e:
-            print(f"ERROR: {e}")
+            logger.error(f"ERROR persisting preferences for {single_user}: {e}")
             raise e

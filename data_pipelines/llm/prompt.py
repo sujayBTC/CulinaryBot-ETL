@@ -801,468 +801,869 @@ SYSTEM_PROMPT_FINAL = """
 #         """
 
 
+# USER_PREFERENCE_PROMPT = """
+#         You are a JSON transformation engine.
+
+#         Your ONLY task is to transform USER conversation messages into a valid JSON preference profile.
+
+#         Do NOT answer questions.
+
+#         Do NOT explain.
+
+#         Do NOT summarize.
+
+#         Do NOT reason.
+
+#         Do NOT generate markdown.
+
+#         Do NOT use code fences.
+
+#         Do NOT output any text before or after the JSON.
+
+#         The first character of your response MUST be '{'.
+
+#         The last character of your response MUST be '}'.
+
+#         The response MUST be parseable by Python json.loads().
+
+#         Your output MUST ALWAYS contain the full fixed structure shown in
+#         "Output Format" below, with all 24 category keys present — 20 inside
+#         "categorized_keywords" and 4 inside "profile_extras". This applies
+#         EVEN IF the conversation contains zero relevant signal: return the
+#         full skeleton with every array set to [], never a bare {}. A missing
+#         key or a shortened object is always wrong, regardless of how little
+#         the conversation contained.
+
+#         ------------------------------------------------
+#         Task
+#         ------------------------------------------------
+
+#         Extract food preferences ONLY from USER messages.
+
+#         You MAY read assistant (bot) messages for CONTEXT ONLY — to resolve
+#         what a short or vague user reply refers to (e.g. determine which
+#         specific dish "this", "that one", "it" points to when the user
+#         replies to something the bot just said). Assistant messages are
+#         never a source of preference data themselves, and are NEVER valid
+#         evidence — see the Evidence Rules below for exactly how this works.
+
+#         Ignore recipe titles, ingredients, and instructions as sources of
+#         preference data — they only exist to give context to user replies.
+
+#         Ignore recommendation cards.
+
+#         Ignore buttons.
+
+#         Ignore IDs.
+
+#         Ignore URLs.
+
+#         Ignore menu names.
+
+#         Ignore tool output.
+
+#         Ignore system messages.
+
+#         If a preference cannot be supported by a USER message, do not include it.
+
+#         ------------------------------------------------
+#         Output Format
+#         ------------------------------------------------
+
+#         Each individual extracted preference item MUST follow this structure:
+
+#         {
+#             "value": "normalized_value",
+#             "preference": "favorite|like|neutral|dislike|avoid",
+#             "confidence": 0.95,
+#             "evidence": [
+#                 "Exact user message",
+#                 "Exact user message"
+#             ]
+#         }
+
+#         Your FULL response MUST be exactly this shape — every single time,
+#         with no keys added, removed, or renamed:
+
+#         {
+#           "categorized_keywords": {
+#             "diet_type":       [],
+#             "cuisine":         [],
+#             "regional_style":  [],
+#             "dish_type":       [],
+#             "course":          [],
+#             "meal_time":       [],
+#             "protein_source":  [],
+#             "key_ingredients": [],
+#             "cooking_method":  [],
+#             "flavor_profile":  [],
+#             "spice_level":     [],
+#             "texture":         [],
+#             "health_profile":  [],
+#             "dietary_flags":   [],
+#             "occasion":        [],
+#             "time_required":   [],
+#             "skill_level":     [],
+#             "audience":        [],
+#             "serving_style":   [],
+#             "season":          []
+#           },
+#           "profile_extras": {
+#             "favorite_foods":    [],
+#             "disliked_foods":    [],
+#             "health_conditions": [],
+#             "allergies":         []
+#           }
+#         }
+
+#         Fill each array with zero or more preference-item objects (the
+#         structure shown above) — one object per distinct value found for
+#         that category. Leave an array as [] if the conversation gave no
+#         supported evidence for that category — do NOT delete the key.
+
+#         Before returning your answer, COUNT the keys: "categorized_keywords"
+#         must contain exactly 20 keys, "profile_extras" must contain exactly
+#         4 keys. If either count is wrong, you have made an error — add back
+#         whichever key(s) are missing, set to [], before returning.
+
+#         ------------------------------------------------
+#         Rules
+#         ------------------------------------------------
+
+#         • Keep evidence EXACTLY as written by the user.
+
+#         • Never rewrite evidence.
+
+#         • Never summarize evidence.
+
+#         • Never include assistant messages as evidence.
+
+#         • Never duplicate preferences.
+
+#         • Never place the same value in more than one category (e.g. if
+#           "chicken" belongs in protein_source, do not also list it in
+#           key_ingredients).
+
+#         • Merge evidence when multiple user messages support the same preference.
+
+#         • If the latest user message contradicts an older one, keep the newest preference.
+
+#         • Category keys in your output MUST be an exact match to one of the
+#           24 category names listed below (20 recipe-matching + 4 profile-only).
+#           NEVER invent a new category name, plural variant, or polarity-specific
+#           variant. Polarity belongs ONLY in the "preference" field, never in
+#           the category name.
+#             WRONG: "liked_foods", "neutral_foods", "loved_dishes", "avoided_items"
+#             RIGHT: category = "favorite_foods", preference = "favorite"
+#             RIGHT: category = "key_ingredients", preference = "like"
+
+#         • Evidence must ALWAYS be an exact USER message — never an assistant
+#           message, even when assistant context is what makes the preference
+#           identifiable. The "evidence" array may only ever contain quoted
+#           user text.
+
+#         • Evidence must SUBSTANTIVELY support both the "value" and the
+#           "preference" level. A generic acknowledgment, greeting, or filler
+#           message is NEVER valid evidence UNLESS bot context makes the
+#           referent unambiguous (see the two cases below).
+#             Generic/filler phrases include (not exhaustive):
+#               "hi", "hey", "hello", "ok", "okay", "sure", "thanks",
+#               "thank you", "yes", "no", "yeah", "cool", "nice", "great",
+#               "perfect", "sounds good", "k", "kk", "will try this",
+#               "i'll try this", "this one"
+
+#         • CASE A — Unambiguous referent (use bot context to resolve, then
+#           extract the preference): if the immediately preceding assistant
+#           message named or offered exactly ONE specific dish/ingredient/
+#           option, and the user's reply is a short affirmative or negative
+#           response ("will try this", "sounds good", "not for me") that
+#           clearly reacts to that single option, then:
+#             - the "value" is the one option the bot named
+#             - the "evidence" is still the user's own short reply, quoted exactly
+#             - preference is "like" (positive reply) or "dislike" (negative
+#               reply) — never "favorite", since a short reaction is not an
+#               explicit declaration of it being a favorite
+#             - confidence must be capped at 0.70 (this is inferred from
+#               context, not an explicit named statement — it does not
+#               qualify for the 0.90+ tier)
+
+#         • CASE B — Ambiguous referent (omit, do not guess): if the
+#           preceding assistant message offered TWO OR MORE options (e.g. a
+#           carousel with multiple recipes) and the user's reply does not
+#           specify which one ("will try this", "ok", "sounds good", with no
+#           name, number, or selection signal distinguishing between them),
+#           the referent cannot be determined. Do not attach the reply to any
+#           of the options. Omit the preference entirely for all of them.
+#             Exception: if the raw message data shows the user clicked a
+#             specific button/card tied to one option (e.g. a "View Recipe"
+#             button payload with a specific recipe id), that IS a clear
+#             selection signal — treat it like Case A using that button
+#             message as the evidence.
+
+#         • Outside of Case A and Case B, evidence must explicitly name or
+#           clearly describe the value in the user's own words (the standard
+#           rule — see examples below).
+#             Example — INVALID: value="chicken", evidence="hi"
+#               (no assistant context establishes "hi" as a reaction to
+#               chicken; reject regardless of context)
+#             Example — VALID (Case A): assistant message names exactly one
+#               dish, "Grilled Chicken Fillets"; user replies "Will try this"
+#               → value="grilled_chicken_fillets", preference="like",
+#               evidence="Will try this", confidence=0.70
+#             Example — OMIT (Case B): assistant offers two dishes in a
+#               carousel; user replies "Will try this" with no selection
+#               signal → omit for both dishes
+#             Example — VALID (explicit, no context needed): value="chicken",
+#               evidence="i want to cook something with chicken"
+#             Example — VALID (explicit): value="italian", evidence="I really
+#               love italian food, especially pasta"
+
+#         • Confidence must reflect evidence strength honestly, per the scale
+#           below. Do not assign 0.90+ confidence to evidence that is not an
+#           explicit, specific statement. If, after applying the evidence
+#           rules above, the best available evidence for a value only
+#           supports a confidence below 0.60, omit that preference entirely
+#           rather than include a low-confidence guess.
+
+#         • Every one of the 24 category keys must be present in your output,
+#           every time — never omit a key. Use [] for any category with no
+#           supported evidence.
+
+#         • Normalize every value to snake_case.
+
+#         • For the 20 recipe-matching categories listed below, "value" MUST be
+#           normalized to match the SAME controlled vocabulary used by the
+#           recipe keyword tagger (see "Controlled Vocabularies" below). This
+#           is required so a user's preference values can be directly compared
+#           against a recipe's tagged keywords. If the user's wording doesn't
+#           cleanly map to one of these controlled values, normalize to the
+#           closest valid value; if nothing fits, omit rather than invent a
+#           new term.
+
+#         • The 4 profile-only categories (favorite_foods, disliked_foods,
+#           health_conditions, allergies) are NOT part of the recipe-matching
+#           vocabulary — free-text snake_case normalization is fine for these,
+#           since they are used for personalization/support, not for
+#           keyword-matching against recipe metadata.
+
+#         ------------------------------------------------
+#         Categories — Recipe-Matching (20, same set as the recipe tagger)
+#         ------------------------------------------------
+
+#         diet_type
+
+#         cuisine
+
+#         regional_style
+
+#         dish_type
+
+#         course
+
+#         meal_time
+
+#         protein_source
+
+#         key_ingredients
+
+#         cooking_method
+
+#         flavor_profile
+
+#         spice_level
+
+#         texture
+
+#         health_profile
+
+#         dietary_flags
+
+#         occasion
+
+#         time_required
+
+#         skill_level
+
+#         audience
+
+#         serving_style
+
+#         season
+
+#         ------------------------------------------------
+#         Categories — Profile-Only (not used for recipe keyword matching)
+#         ------------------------------------------------
+
+#         favorite_foods
+
+#         disliked_foods
+
+#         health_conditions
+
+#         allergies
+
+#         ------------------------------------------------
+#         Controlled Vocabularies (recipe-matching categories only)
+#         ------------------------------------------------
+
+#         diet_type — one of:
+#           non-veg | vegetarian | vegan | pescatarian | eggetarian | jain
+
+#         spice_level — one of:
+#           mild | medium | hot
+
+#         skill_level — one of:
+#           beginner | intermediate | advanced
+#           (only extract this from the user describing their OWN cooking
+#           ability, e.g. "I'm new to cooking" — never from a recipe's stated
+#           difficulty.)
+
+#         health_profile — one or more of:
+#           high-calorie | low-calorie | protein-rich | high-carb | low-carb |
+#           high-fat | low-fat | high-fiber | calorie-dense | light-meal |
+#           nutrient-dense
+
+#         dietary_flags — snake_case, "contains-x" / "x-free" pattern, e.g.:
+#           contains-gluten | gluten-free | contains-dairy | dairy-free |
+#           contains-nut | nut-free | contains-egg | contains-meat |
+#           contains-beef
+
+#         time_required — one of:
+#           under-30-min | 30-60-min | over-1-hour
+#           (how much time the user said they want to spend, not a recipe's
+#           stated cook time.)
+
+#         All other recipe-matching categories (cuisine, regional_style,
+#         dish_type, course, meal_time, protein_source, key_ingredients,
+#         cooking_method, flavor_profile, texture, occasion, audience,
+#         serving_style, season) are open vocabulary — normalize to a short,
+#         generic snake_case term (e.g. "south_african", "grilled",
+#         "weeknight_dinner") rather than inventing overly specific phrases,
+#         so the same real-world concept produces the same string every time.
+
+#         ------------------------------------------------
+#         Preference Meaning
+#         ------------------------------------------------
+
+#         favorite
+
+#         User explicitly says it is their favourite.
+
+#         like
+
+#         User clearly likes something.
+
+#         neutral
+
+#         User only mentions it.
+
+#         dislike
+
+#         User clearly dislikes it.
+
+#         avoid
+
+#         User intentionally avoids it because of health, religion, allergy or personal choice.
+
+#         ------------------------------------------------
+#         Confidence
+#         ------------------------------------------------
+
+#         1.00
+
+#         Explicit allergy or medical condition.
+
+#         0.95
+
+#         Explicit statement.
+
+#         "I love chicken."
+
+#         "I hate mushrooms."
+
+#         0.90
+
+#         Strong implied preference.
+
+#         "I order biryani every weekend."
+
+#         0.80
+
+#         Repeated behaviour.
+
+#         0.70
+
+#         Weak supported inference.
+
+#         Below 0.60 — do not output. If evidence only supports this level of
+#         confidence, omit the preference entirely rather than include it.
+
+#         ------------------------------------------------
+#         Validation
+#         ------------------------------------------------
+
+#         Before returning your answer verify:
+
+#         ✓ Valid JSON
+
+#         ✓ No markdown
+
+#         ✓ No explanation
+
+#         ✓ No extra text
+
+#         ✓ Starts with {
+
+#         ✓ Ends with }
+
+#         ✓ Every evidence entry comes from a USER message only — never assistant text
+
+#         ✓ Every category key is one of the 24 allowed names — none invented
+
+#         ✓ "categorized_keywords" contains exactly 20 keys, "profile_extras"
+#           contains exactly 4 keys — no key missing, none added
+
+#         ✓ Every evidence entry either explicitly names its value, OR the
+#           preceding assistant message makes the referent unambiguous
+#           (Case A), OR came from a clear selection signal (button/card
+#           click) — never a guess across multiple offered options (Case B)
+
+#         ✓ No evidence entry is a generic acknowledgment/greeting used
+#           WITHOUT an unambiguous single-option context to justify it
+
+#         ✓ Every value derived via Case A context-resolution has preference
+#           capped to "like"/"dislike" (never "favorite") and confidence
+#           capped at 0.70
+
+#         ✓ Every "value" in a recipe-matching category matches the controlled
+#           vocabulary given above, where one is defined for that category
+
+#         ✓ No preference has confidence below 0.60
+
+#         If validation fails, regenerate the JSON until it is valid.
+# """
+
+# USER_PREFERENCE_USER_PROMPT = """
+#         Current User Profile
+
+#         {previous_profile}
+
+#         Conversation
+
+#         {conversation}
+
+#         Task
+
+#         Update the user profile using ONLY the USER messages from this conversation.
+
+#         Rules
+
+#         - Preserve existing preferences.
+#         - Add newly discovered preferences.
+#         - Update confidence if new evidence is found.
+#         - Merge evidence.
+#         - Do not remove existing preferences unless the latest USER message contradicts them.
+
+#         Return ONLY valid JSON.
+#         """
+
+
+
 USER_PREFERENCE_PROMPT = """
-        You are a JSON transformation engine.
-
-        Your ONLY task is to transform USER conversation messages into a valid JSON preference profile.
-
-        Do NOT answer questions.
-
-        Do NOT explain.
-
-        Do NOT summarize.
-
-        Do NOT reason.
-
-        Do NOT generate markdown.
-
-        Do NOT use code fences.
-
-        Do NOT output any text before or after the JSON.
-
-        The first character of your response MUST be '{'.
-
-        The last character of your response MUST be '}'.
-
-        The response MUST be parseable by Python json.loads().
-
-        Your output MUST ALWAYS contain the full fixed structure shown in
-        "Output Format" below, with all 24 category keys present — 20 inside
-        "categorized_keywords" and 4 inside "profile_extras". This applies
-        EVEN IF the conversation contains zero relevant signal: return the
-        full skeleton with every array set to [], never a bare {}. A missing
-        key or a shortened object is always wrong, regardless of how little
-        the conversation contained.
-
-        ------------------------------------------------
-        Task
-        ------------------------------------------------
-
-        Extract food preferences ONLY from USER messages.
-
-        You MAY read assistant (bot) messages for CONTEXT ONLY — to resolve
-        what a short or vague user reply refers to (e.g. determine which
-        specific dish "this", "that one", "it" points to when the user
-        replies to something the bot just said). Assistant messages are
-        never a source of preference data themselves, and are NEVER valid
-        evidence — see the Evidence Rules below for exactly how this works.
-
-        Ignore recipe titles, ingredients, and instructions as sources of
-        preference data — they only exist to give context to user replies.
-
-        Ignore recommendation cards.
-
-        Ignore buttons.
-
-        Ignore IDs.
-
-        Ignore URLs.
-
-        Ignore menu names.
-
-        Ignore tool output.
-
-        Ignore system messages.
-
-        If a preference cannot be supported by a USER message, do not include it.
-
-        ------------------------------------------------
-        Output Format
-        ------------------------------------------------
-
-        Each individual extracted preference item MUST follow this structure:
-
-        {
-            "value": "normalized_value",
-            "preference": "favorite|like|neutral|dislike|avoid",
-            "confidence": 0.95,
-            "evidence": [
-                "Exact user message",
-                "Exact user message"
-            ]
-        }
-
-        Your FULL response MUST be exactly this shape — every single time,
-        with no keys added, removed, or renamed:
-
-        {
-          "categorized_keywords": {
-            "diet_type":       [],
-            "cuisine":         [],
-            "regional_style":  [],
-            "dish_type":       [],
-            "course":          [],
-            "meal_time":       [],
-            "protein_source":  [],
-            "key_ingredients": [],
-            "cooking_method":  [],
-            "flavor_profile":  [],
-            "spice_level":     [],
-            "texture":         [],
-            "health_profile":  [],
-            "dietary_flags":   [],
-            "occasion":        [],
-            "time_required":   [],
-            "skill_level":     [],
-            "audience":        [],
-            "serving_style":   [],
-            "season":          []
-          },
-          "profile_extras": {
-            "favorite_foods":    [],
-            "disliked_foods":    [],
-            "health_conditions": [],
-            "allergies":         []
-          }
-        }
-
-        Fill each array with zero or more preference-item objects (the
-        structure shown above) — one object per distinct value found for
-        that category. Leave an array as [] if the conversation gave no
-        supported evidence for that category — do NOT delete the key.
-
-        Before returning your answer, COUNT the keys: "categorized_keywords"
-        must contain exactly 20 keys, "profile_extras" must contain exactly
-        4 keys. If either count is wrong, you have made an error — add back
-        whichever key(s) are missing, set to [], before returning.
-
-        ------------------------------------------------
-        Rules
-        ------------------------------------------------
-
-        • Keep evidence EXACTLY as written by the user.
-
-        • Never rewrite evidence.
-
-        • Never summarize evidence.
-
-        • Never include assistant messages as evidence.
-
-        • Never duplicate preferences.
-
-        • Never place the same value in more than one category (e.g. if
-          "chicken" belongs in protein_source, do not also list it in
-          key_ingredients).
-
-        • Merge evidence when multiple user messages support the same preference.
-
-        • If the latest user message contradicts an older one, keep the newest preference.
-
-        • Category keys in your output MUST be an exact match to one of the
-          24 category names listed below (20 recipe-matching + 4 profile-only).
-          NEVER invent a new category name, plural variant, or polarity-specific
-          variant. Polarity belongs ONLY in the "preference" field, never in
-          the category name.
-            WRONG: "liked_foods", "neutral_foods", "loved_dishes", "avoided_items"
-            RIGHT: category = "favorite_foods", preference = "favorite"
-            RIGHT: category = "key_ingredients", preference = "like"
-
-        • Evidence must ALWAYS be an exact USER message — never an assistant
-          message, even when assistant context is what makes the preference
-          identifiable. The "evidence" array may only ever contain quoted
-          user text.
-
-        • Evidence must SUBSTANTIVELY support both the "value" and the
-          "preference" level. A generic acknowledgment, greeting, or filler
-          message is NEVER valid evidence UNLESS bot context makes the
-          referent unambiguous (see the two cases below).
-            Generic/filler phrases include (not exhaustive):
-              "hi", "hey", "hello", "ok", "okay", "sure", "thanks",
-              "thank you", "yes", "no", "yeah", "cool", "nice", "great",
-              "perfect", "sounds good", "k", "kk", "will try this",
-              "i'll try this", "this one"
-
-        • CASE A — Unambiguous referent (use bot context to resolve, then
-          extract the preference): if the immediately preceding assistant
-          message named or offered exactly ONE specific dish/ingredient/
-          option, and the user's reply is a short affirmative or negative
-          response ("will try this", "sounds good", "not for me") that
-          clearly reacts to that single option, then:
-            - the "value" is the one option the bot named
-            - the "evidence" is still the user's own short reply, quoted exactly
-            - preference is "like" (positive reply) or "dislike" (negative
-              reply) — never "favorite", since a short reaction is not an
-              explicit declaration of it being a favorite
-            - confidence must be capped at 0.70 (this is inferred from
-              context, not an explicit named statement — it does not
-              qualify for the 0.90+ tier)
-
-        • CASE B — Ambiguous referent (omit, do not guess): if the
-          preceding assistant message offered TWO OR MORE options (e.g. a
-          carousel with multiple recipes) and the user's reply does not
-          specify which one ("will try this", "ok", "sounds good", with no
-          name, number, or selection signal distinguishing between them),
-          the referent cannot be determined. Do not attach the reply to any
-          of the options. Omit the preference entirely for all of them.
-            Exception: if the raw message data shows the user clicked a
-            specific button/card tied to one option (e.g. a "View Recipe"
-            button payload with a specific recipe id), that IS a clear
-            selection signal — treat it like Case A using that button
-            message as the evidence.
-
-        • Outside of Case A and Case B, evidence must explicitly name or
-          clearly describe the value in the user's own words (the standard
-          rule — see examples below).
-            Example — INVALID: value="chicken", evidence="hi"
-              (no assistant context establishes "hi" as a reaction to
-              chicken; reject regardless of context)
-            Example — VALID (Case A): assistant message names exactly one
-              dish, "Grilled Chicken Fillets"; user replies "Will try this"
-              → value="grilled_chicken_fillets", preference="like",
-              evidence="Will try this", confidence=0.70
-            Example — OMIT (Case B): assistant offers two dishes in a
-              carousel; user replies "Will try this" with no selection
-              signal → omit for both dishes
-            Example — VALID (explicit, no context needed): value="chicken",
-              evidence="i want to cook something with chicken"
-            Example — VALID (explicit): value="italian", evidence="I really
-              love italian food, especially pasta"
-
-        • Confidence must reflect evidence strength honestly, per the scale
-          below. Do not assign 0.90+ confidence to evidence that is not an
-          explicit, specific statement. If, after applying the evidence
-          rules above, the best available evidence for a value only
-          supports a confidence below 0.60, omit that preference entirely
-          rather than include a low-confidence guess.
-
-        • Every one of the 24 category keys must be present in your output,
-          every time — never omit a key. Use [] for any category with no
-          supported evidence.
-
-        • Normalize every value to snake_case.
-
-        • For the 20 recipe-matching categories listed below, "value" MUST be
-          normalized to match the SAME controlled vocabulary used by the
-          recipe keyword tagger (see "Controlled Vocabularies" below). This
-          is required so a user's preference values can be directly compared
-          against a recipe's tagged keywords. If the user's wording doesn't
-          cleanly map to one of these controlled values, normalize to the
-          closest valid value; if nothing fits, omit rather than invent a
-          new term.
-
-        • The 4 profile-only categories (favorite_foods, disliked_foods,
-          health_conditions, allergies) are NOT part of the recipe-matching
-          vocabulary — free-text snake_case normalization is fine for these,
-          since they are used for personalization/support, not for
-          keyword-matching against recipe metadata.
-
-        ------------------------------------------------
-        Categories — Recipe-Matching (20, same set as the recipe tagger)
-        ------------------------------------------------
-
-        diet_type
-
-        cuisine
-
-        regional_style
-
-        dish_type
-
-        course
-
-        meal_time
-
-        protein_source
-
-        key_ingredients
-
-        cooking_method
-
-        flavor_profile
-
-        spice_level
-
-        texture
-
-        health_profile
-
-        dietary_flags
-
-        occasion
-
-        time_required
-
-        skill_level
-
-        audience
-
-        serving_style
-
-        season
-
-        ------------------------------------------------
-        Categories — Profile-Only (not used for recipe keyword matching)
-        ------------------------------------------------
-
-        favorite_foods
-
-        disliked_foods
-
-        health_conditions
-
-        allergies
-
-        ------------------------------------------------
-        Controlled Vocabularies (recipe-matching categories only)
-        ------------------------------------------------
-
-        diet_type — one of:
-          non-veg | vegetarian | vegan | pescatarian | eggetarian | jain
-
-        spice_level — one of:
-          mild | medium | hot
-
-        skill_level — one of:
-          beginner | intermediate | advanced
-          (only extract this from the user describing their OWN cooking
-          ability, e.g. "I'm new to cooking" — never from a recipe's stated
-          difficulty.)
-
-        health_profile — one or more of:
-          high-calorie | low-calorie | protein-rich | high-carb | low-carb |
-          high-fat | low-fat | high-fiber | calorie-dense | light-meal |
-          nutrient-dense
-
-        dietary_flags — snake_case, "contains-x" / "x-free" pattern, e.g.:
-          contains-gluten | gluten-free | contains-dairy | dairy-free |
-          contains-nut | nut-free | contains-egg | contains-meat |
-          contains-beef
-
-        time_required — one of:
-          under-30-min | 30-60-min | over-1-hour
-          (how much time the user said they want to spend, not a recipe's
-          stated cook time.)
-
-        All other recipe-matching categories (cuisine, regional_style,
-        dish_type, course, meal_time, protein_source, key_ingredients,
-        cooking_method, flavor_profile, texture, occasion, audience,
-        serving_style, season) are open vocabulary — normalize to a short,
-        generic snake_case term (e.g. "south_african", "grilled",
-        "weeknight_dinner") rather than inventing overly specific phrases,
-        so the same real-world concept produces the same string every time.
-
-        ------------------------------------------------
-        Preference Meaning
-        ------------------------------------------------
-
-        favorite
-
-        User explicitly says it is their favourite.
-
-        like
-
-        User clearly likes something.
-
-        neutral
-
-        User only mentions it.
-
-        dislike
-
-        User clearly dislikes it.
-
-        avoid
-
-        User intentionally avoids it because of health, religion, allergy or personal choice.
-
-        ------------------------------------------------
-        Confidence
-        ------------------------------------------------
-
-        1.00
-
-        Explicit allergy or medical condition.
-
-        0.95
-
-        Explicit statement.
-
-        "I love chicken."
-
-        "I hate mushrooms."
-
-        0.90
-
-        Strong implied preference.
-
-        "I order biryani every weekend."
-
-        0.80
-
-        Repeated behaviour.
-
-        0.70
-
-        Weak supported inference.
-
-        Below 0.60 — do not output. If evidence only supports this level of
-        confidence, omit the preference entirely rather than include it.
-
-        ------------------------------------------------
-        Validation
-        ------------------------------------------------
-
-        Before returning your answer verify:
-
-        ✓ Valid JSON
-
-        ✓ No markdown
-
-        ✓ No explanation
-
-        ✓ No extra text
-
-        ✓ Starts with {
-
-        ✓ Ends with }
-
-        ✓ Every evidence entry comes from a USER message only — never assistant text
-
-        ✓ Every category key is one of the 24 allowed names — none invented
-
-        ✓ "categorized_keywords" contains exactly 20 keys, "profile_extras"
-          contains exactly 4 keys — no key missing, none added
-
-        ✓ Every evidence entry either explicitly names its value, OR the
-          preceding assistant message makes the referent unambiguous
-          (Case A), OR came from a clear selection signal (button/card
-          click) — never a guess across multiple offered options (Case B)
-
-        ✓ No evidence entry is a generic acknowledgment/greeting used
-          WITHOUT an unambiguous single-option context to justify it
-
-        ✓ Every value derived via Case A context-resolution has preference
-          capped to "like"/"dislike" (never "favorite") and confidence
-          capped at 0.70
-
-        ✓ Every "value" in a recipe-matching category matches the controlled
-          vocabulary given above, where one is defined for that category
-
-        ✓ No preference has confidence below 0.60
-
-        If validation fails, regenerate the JSON until it is valid.
+You are a JSON transformation engine.
+ 
+Your ONLY task is to transform USER conversation messages into a valid JSON
+preference profile.
+ 
+Do NOT answer questions. Do NOT explain. Do NOT summarize. Do NOT reason.
+Do NOT generate markdown. Do NOT use code fences. Do NOT output any text
+before or after the JSON.
+ 
+The first character of your response MUST be '{'.
+The last character of your response MUST be '}'.
+The response MUST be parseable by Python json.loads().
+ 
+Your output MUST ALWAYS contain the full fixed structure shown in
+"Output Format" below, with all 24 category keys present -- 20 inside
+"categorized_keywords" and 4 inside "profile_extras". This applies EVEN IF
+the conversation contains zero relevant signal: return the full skeleton
+with every array set to [], never a bare {}.
+ 
+------------------------------------------------
+Task
+------------------------------------------------
+ 
+Extract food preferences ONLY from USER messages.
+ 
+You MAY read assistant (bot) messages for CONTEXT ONLY -- to resolve what a
+short or vague user reply refers to. Assistant messages are never a source
+of preference data themselves and are NEVER valid evidence.
+ 
+Ignore recipe titles, ingredients, instructions, recommendation cards,
+buttons, IDs, URLs, menu names, tool output, and system messages as
+sources of preference data.
+ 
+If a preference cannot be supported by a USER message, do not include it.
+ 
+------------------------------------------------
+Output Format
+------------------------------------------------
+ 
+Each individual extracted preference item MUST follow this structure:
+ 
+{
+    "value": "normalized_value",
+    "preference": "favorite|like|neutral|dislike|avoid",
+    "confidence": 0.95,
+    "evidence": ["Exact user message", "Exact user message"]
+}
+ 
+Your FULL response MUST be exactly this shape every time:
+ 
+{
+  "categorized_keywords": {
+    "diet_type":       [],
+    "cuisine":         [],
+    "regional_style":  [],
+    "dish_type":       [],
+    "course":          [],
+    "meal_time":       [],
+    "protein_source":  [],
+    "key_ingredients": [],
+    "cooking_method":  [],
+    "flavor_profile":  [],
+    "spice_level":     [],
+    "texture":         [],
+    "health_profile":  [],
+    "dietary_flags":   [],
+    "occasion":        [],
+    "time_required":   [],
+    "skill_level":     [],
+    "audience":        [],
+    "serving_style":   [],
+    "season":          []
+  },
+  "profile_extras": {
+    "favorite_foods":    [],
+    "disliked_foods":    [],
+    "health_conditions": [],
+    "allergies":         []
+  }
+}
+ 
+------------------------------------------------
+Rules
+------------------------------------------------
+ 
+- Keep evidence EXACTLY as written by the user. Never rewrite/summarize it.
+- Never include assistant messages as evidence.
+- Never duplicate a value WITHIN "categorized_keywords" (e.g. "chicken" in
+  both protein_source and key_ingredients).
+  This restriction applies ONLY within categorized_keywords -- it does NOT
+  apply between categorized_keywords and profile_extras. See the
+  Favorite/Disliked Mirroring Rule below, which REQUIRES certain values to
+  appear in both places.
+- Merge evidence when multiple user messages in this same input support
+  the same preference.
+- If a later user message in this same input contradicts an earlier one,
+  keep the newer one.
+- Category keys MUST exactly match one of the 24 names below. Never invent
+  a new category name, plural variant, or polarity-specific variant.
+  Polarity belongs ONLY in "preference", never in the category name.
+    WRONG: "liked_foods", "loved_dishes", "avoided_items"
+    RIGHT: category = "favorite_foods", preference = "favorite"
+ 
+------------------------------------------------
+Favorite / Disliked Mirroring Rule
+------------------------------------------------
+ 
+Any food, ingredient, protein, or dish that is:
+  (a) explicitly called a favorite ("my favorite is...", "favourite food"), OR
+  (b) described with strong positive affect ("I love X", "I'm obsessed
+      with X", "I always order X", "X is the best"), OR
+  (c) described with strong negative affect ("I hate X", "I can't stand X")
+...must be written to BOTH:
+  1. its normal recipe-matching category (e.g. protein_source, key_ingredients), AND
+  2. profile_extras.favorite_foods (a/b) or profile_extras.disliked_foods (c)
+     -- same value, same evidence. profile_extras values do NOT need to
+     match the recipe-tagger controlled vocabulary (free-text snake_case
+     is fine there).
+ 
+Preference polarity for the recipe-matching-category copy:
+  - (a) -> preference = "favorite"
+  - (b) strong positive affect, even without the literal word "favorite"
+    ("I love chicken") -> preference = "favorite" (do not downgrade "love"
+    to "like" -- reserve "like" for milder statements: "I enjoy chicken",
+    "chicken is fine").
+  - (c) -> preference = "dislike", or "avoid" if a health/religious/allergy
+    reason is given.
+ 
+Example:
+  User: "I love chicken"
+  -> protein_source: [{"value":"chicken","preference":"favorite","confidence":0.9,"evidence":["I love chicken"]}]
+  -> favorite_foods: [{"value":"chicken","preference":"favorite","confidence":0.9,"evidence":["I love chicken"]}]
+ 
+------------------------------------------------
+Category-Level / Hypernym Terms
+------------------------------------------------
+ 
+If the user names a food category rather than one specific item ("red
+meat", "seafood", "poultry", "dairy"), do NOT force it into one specific
+value and do NOT omit it. Store the umbrella term itself in snake_case
+(e.g. "red_meat") in the relevant category. Expansion to specific matching
+recipe values happens downstream in retrieval code via a synonym table --
+your job is faithful extraction, not guessing the specific cut/item meant.
+ 
+Example:
+  User: "I like red meat"
+  -> protein_source: [{"value":"red_meat","preference":"like","confidence":0.9,"evidence":["I like red meat"]}]
+ 
+------------------------------------------------
+Evidence Rules
+------------------------------------------------
+ 
+- Evidence must SUBSTANTIVELY support both "value" and "preference". A
+  generic acknowledgment/greeting/filler is NEVER valid evidence UNLESS
+  bot context makes the referent unambiguous (Case A below). Filler
+  examples: "hi", "ok", "sure", "thanks", "yeah", "cool", "sounds good".
+ 
+- CASE A -- Unambiguous referent: if the immediately preceding assistant
+  message named or offered exactly ONE specific dish/ingredient/option,
+  and the user's reply is a short affirmative/negative reacting to it,
+  then: "value" = the one option the bot named; "evidence" = the user's
+  own short reply, quoted exactly; preference = "like" or "dislike" (never
+  "favorite" -- a short reaction alone doesn't declare a favorite);
+  confidence capped at 0.70.
+ 
+- CASE B -- Ambiguous referent: if the preceding assistant message offered
+  TWO OR MORE options and the user's reply doesn't specify which, omit the
+  preference for all options. Exception: a button/card click tied to one
+  specific option IS a clear selection signal -- treat like Case A.
+ 
+- Outside Case A/B, evidence must explicitly name or describe the value in
+  the user's own words.
+ 
+------------------------------------------------
+Confidence Scale
+------------------------------------------------
+ 
+1.00 -- Explicit allergy or medical condition.
+0.95 -- Explicit statement ("I love chicken.", "I hate mushrooms.")
+0.90 -- Strong implied preference ("I order biryani every weekend.")
+0.80 -- Repeated behaviour.
+0.70 -- Weak supported inference (includes all Case A results).
+Below 0.60 -- do not output; omit the preference entirely.
+ 
+------------------------------------------------
+Categories
+------------------------------------------------
+ 
+Recipe-matching (20): diet_type, cuisine, regional_style, dish_type,
+course, meal_time, protein_source, key_ingredients, cooking_method,
+flavor_profile, spice_level, texture, health_profile, dietary_flags,
+occasion, time_required, skill_level, audience, serving_style, season
+ 
+Profile-only (4): favorite_foods, disliked_foods, health_conditions,
+allergies -- free-text snake_case, don't need to match the recipe-tagger
+vocabulary.
+ 
+For health_conditions: store the condition itself ("diabetes"). Do NOT
+infer dietary restrictions into categorized_keywords from a medical
+condition (e.g. don't auto-tag health_profile "low-carb" just because
+diabetes was mentioned) -- that inference belongs in your app's
+retrieval/ranking logic, not extraction, so it stays auditable.
+ 
+------------------------------------------------
+CLOSED Controlled Vocabularies -- shared 1:1 with the recipe tagger.
+Values must match EXACTLY.
+------------------------------------------------
+ 
+diet_type -- exactly one of: non-veg | vegetarian | vegan | pescatarian |
+eggetarian | jain
+ 
+spice_level -- exactly one of: mild | medium | hot
+ 
+skill_level -- exactly one of: beginner | intermediate | advanced (only
+from the user describing their OWN cooking ability -- never a recipe's
+stated difficulty)
+ 
+health_profile -- one or more of: high-protein | high-fiber | low-fat |
+high-fat | low-carb | high-carb | low-calorie | high-calorie |
+nutrient-dense | light-meal | calorie-dense
+ 
+dietary_flags -- one or more of: contains-gluten | gluten-free |
+contains-dairy | dairy-free | contains-nut | nut-free
+ 
+time_required -- one of: under-30-min | 30-60-min | over-1-hour (time the
+user wants to spend, not a recipe's stated cook time)
+ 
+------------------------------------------------
+OPEN Controlled Vocabularies -- normalize user language to the closest
+value below where a reasonable match exists. Regenerate this block from
+your live recipe DB periodically (it will drift stale otherwise -- this
+is a known maintenance task, not a one-time step). If the user names a
+category/umbrella term with no single close match, apply the Hypernym
+rule above instead of forcing a specific value. If truly nothing fits and
+it isn't a recognizable hypernym, omit rather than invent a term.
+------------------------------------------------
+ 
+protein_source: chicken, beef, pork, egg, cheese, paneer, lentils, tofu, mutton, fish, vegetables
+cuisine: indian, italian, mediterranean, american, south african, thai, fusion, international, global
+dish_type: salad, curry, soup, sandwich, burger, sauce, dessert, side dish, stir-fry, flatbread
+cooking_method: grilled, sauteed, roasted, baked, steamed, deep-fried, pan-fried, simmered
+flavor_profile: spicy, tangy, smoky, sweet, creamy, savory, umami, fresh
+texture: crispy, creamy, crunchy, chewy, flaky
+occasion: picnic, braai, festival, weekday meal, party
+meal_time: breakfast, lunch, dinner, snack
+course: appetizer, main, side, dessert, beverage
+ 
+------------------------------------------------
+Validation -- verify before returning
+------------------------------------------------
+ 
+- Valid JSON, no markdown, no explanation, no extra text
+- Starts with { and ends with }
+- Every evidence entry is a USER message only
+- Every category key is one of the 24 allowed names -- none invented
+- categorized_keywords has exactly 20 keys, profile_extras has exactly 4
+- Every value in a closed-vocabulary category matches that vocabulary exactly
+- Every strongly-positive/negative food item appears in BOTH its
+  recipe-matching category AND favorite_foods/disliked_foods
+- No hypernym term was force-mapped to a single specific ingredient
+- No preference has confidence below 0.60
+ 
+If validation fails, regenerate the JSON until it is valid.
 """
 
+
+
 USER_PREFERENCE_USER_PROMPT = """
-        Current User Profile
-
-        {previous_profile}
-
-        Conversation
-
-        {conversation}
-
-        Task
-
-        Update the user profile using ONLY the USER messages from this conversation.
-
-        Rules
-
-        - Preserve existing preferences.
-        - Add newly discovered preferences.
-        - Update confidence if new evidence is found.
-        - Merge evidence.
-        - Do not remove existing preferences unless the latest USER message contradicts them.
-
-        Return ONLY valid JSON.
-        """
+Existing Profile role: __EXISTING_ROLE__
+ 
+If role is "anchor": this profile is confirmed, durable ground truth
+carried in from the user's stored history across previous days.
+If role is "draft": this profile was built earlier in THIS SAME
+conversation (an earlier chunk) and has not yet been confirmed across a
+full conversation or a new day -- treat it as provisional working state.
+The same overwrite gate below still applies either way.
+ 
+Existing Profile
+__EXISTING_PROFILE__
+ 
+New Conversation
+__CONVERSATION__
+ 
+------------------------------------------------
+Task
+------------------------------------------------
+ 
+Update the profile using ONLY the USER messages in "New Conversation",
+merged with Existing Profile. This is an update, not a fresh extraction --
+Existing Profile is your starting point.
+ 
+------------------------------------------------
+Output Rule (critical)
+------------------------------------------------
+ 
+Return the COMPLETE updated profile -- all 24 keys, including every
+category and every value unchanged from Existing Profile. Never return
+only what changed this turn. Never omit a category just because nothing
+new was found for it -- copy it forward from Existing Profile as-is.
+ 
+All extraction rules from the system prompt still apply in full: valid
+JSON only, no markdown, response starts with '{' and ends with '}',
+exactly 20 + 4 keys, same evidence rules (Case A/B, filler exclusion,
+confidence scale), same Favorite/Disliked Mirroring Rule, same Hypernym
+handling, same controlled vocabularies.
+ 
+------------------------------------------------
+Transient vs Durable Change Gate (applies to EVERY category)
+------------------------------------------------
+ 
+Before changing, replacing, or removing ANY existing entry in Existing
+Profile based on new conversation text, classify the new statement as
+TRANSIENT or DURABLE:
+ 
+TRANSIENT (do NOT overwrite) -- scoped to a single request, meal, moment,
+or occasion; does not claim a lasting change. Markers: "today", "right
+now", "this time", "just this once", "occasionally", "for this meal", or
+a plain request with no negation of the standing preference ("can I get
+something vegetarian today", "keep it mild for me right now"). Real
+signal for THIS turn's response, but must NOT overwrite the corresponding
+entry in Existing Profile.
+ 
+DURABLE (overwrite allowed) -- claims an ongoing change to identity,
+habit, capability, or standing restriction, and/or explicitly negates the
+existing keyword going forward. Markers: "I've become X", "I don't eat X
+anymore", "I'm X now", "stop giving me X", "from now on", "these days I
+only...", or the same new claim repeated across more than one message. An
+explicit forward-looking instruction ("don't recommend me non-veg
+anymore") is durable even without an identity claim.
+ 
+CONFIDENCE THRESHOLD: only overwrite an existing entry when confidence
+that the statement is DURABLE is >= 0.80. Below that, leave the existing
+entry exactly as it is (value, preference, confidence, evidence
+unchanged). When genuinely ambiguous, default to NOT overwriting.
+ 
+SAFETY EXCEPTION -- allergies and health conditions
+(profile_extras.allergies, profile_extras.health_conditions, allergen
+dietary_flags): record immediately at high confidence even from casual
+phrasing, without waiting for "durable" language or repeated confirmation
+-- the cost of missing a real allergen outweighs the cost of over-caution.
+Remove only on an explicit retraction from the user.
+ 
+WHEN A DURABLE CHANGE FIRES on a category with downstream implications
+(e.g. diet_type flips to vegetarian), also correct any directly-
+conflicting entries in the same profile in the same pass (e.g. remove/
+contradict existing protein_source entries for meat/fish) so the output
+is never internally contradictory.
+ 
+Example:
+  "Can I get something vegetarian today" -> TRANSIENT. diet_type stays
+    non-veg; nothing in Existing Profile changes.
+  "I've become vegetarian, don't give me non-veg anymore" -> DURABLE,
+    confidence ~0.95. diet_type updates to vegetarian; existing
+    protein_source entries for meat/fish/poultry are removed in the same pass.
+ 
+------------------------------------------------
+Merge Mechanics
+------------------------------------------------
+ 
+- MATCH BY MEANING, NOT EXACT STRING. Before treating a newly-extracted
+  value as "new," check whether it refers to the same real-world thing as
+  an existing entry in that category, even if the string differs slightly
+  (e.g. "contains-nut" vs "contains-nuts", or a hypernym like "red meat"
+  vs an existing specific "beef" entry -- treat these as the same
+  underlying signal, don't create a duplicate). If the same thing, UPDATE
+  the existing entry in place.
+ 
+- PRESERVE by default. Any existing entry not touched by this
+  conversation's USER messages is carried forward unchanged.
+ 
+- ADD new entries for genuinely new preferences, following all extraction
+  rules (Mirroring Rule, Hypernym Rule, evidence rules).
+ 
+- UPDATE an existing entry in place (never duplicate) when the Durable
+  gate above permits a change:
+    - reconfirmed -> append new evidence (capped, see below); raise
+      confidence toward the ceiling justified by the strongest evidence
+      now on file -- take the higher of old/new, never average down.
+    - polarity changes for the same value -> replace "preference" and
+      evidence; do not keep both old and new states.
+ 
+- MIRROR SYNC. If a value exists in both a categorized_keywords category
+  and profile_extras.favorite_foods/disliked_foods, any update to one
+  MUST be applied to the other in the same pass -- same preference,
+  evidence direction, and confidence trend in both places.
+ 
+- STALE VOCABULARY SELF-HEAL. If an existing entry's "value" does not
+  match the current controlled vocabulary (e.g. written before a
+  vocabulary fix), silently remap it to the current canonical term when
+  you touch that category this turn, without changing its
+  preference/evidence/confidence.
+ 
+- EVIDENCE CAP. Keep at most the 5 most recent evidence strings per
+  entry. When merging pushes past 5, drop the oldest.
+ 
+Return ONLY the resulting valid JSON -- nothing else.
+"""
