@@ -74,7 +74,10 @@ def run_keyword_pipeline():
 
 @celery_app.task
 def start_keyword_pipeline():
-    run_keyword_pipeline.delay()
+    chain(
+        all_recipe_ingest_task.si(),
+        run_keyword_pipeline.si()
+    ).delay()
 
 
 @celery_app.task
