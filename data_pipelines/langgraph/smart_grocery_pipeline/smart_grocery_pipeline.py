@@ -12,8 +12,8 @@ from data_pipelines.llm.prompt import SYSTEM_PROMPT, USER_PREFERENCE_PROMPT, USE
 from data_pipelines.db.mongo import get_collection
 
 CONVERSATION_COLLECTION = 'conversations'
-USER_PREFERENCE_KEYWORD = 'user_preference_keyword'
-DB_PREFERENCE_FIELD = 'user_preferences'
+RECIPE_BRAND_COLLECTION = 'recipe_brand'
+SMART_GROCERY_COLLECTION = 'smart_grocery'
 
 MODEL_NAME = "gpt-4o"
 MODEL_CONTEXT_WINDOW = 128_000
@@ -129,34 +129,23 @@ def create_token_chunks(messages: list[dict], max_chunk_tokens: int) -> list[lis
     return chunks
 
 
-async def call_llm(data, previous_context=None, existing_role="anchor", max_retries=2) -> dict | None:
-
-    print("data============>",data)
+async def call_llm(data, brands, previous_context=None, max_retries=2) -> dict | None:
+    
     if not previous_context:
         previous_context = {}
-
-    conversation_payload = json.dumps({"conversation": data})
-    previous_profile_payload = json.dumps(previous_context)
     
     prompt = (
-        USER_PREFERENCE_USER_PROMPT
-        .replace("__EXISTING_ROLE__", existing_role)
-        .replace("__EXISTING_PROFILE__", previous_profile_payload)
-        .replace("__CONVERSATION__", conversation_payload)
+        SMART_GROCERY_PROMPT.
+        replace("__BOT_COMPANY_BRANDS__", json.dumps(brands, ensure_ascii=False))
+        .replace("__PREVIOUS_CONTEXT__", json.dumps(previous_context or {}, ensure_ascii=False))
+        .replace("__CONVERSATION_CHUNK__", json.dumps(data, ensure_ascii=False))
     )
 
     for attempt in range(max_retries + 1):
-        # llm_response = await llm.ainvoke(
-        #     [
-        #         SystemMessage(content=USER_PREFERENCE_PROMPT),
-        #     ]
-        # )
-        
-        bot_company_brands = ["KOO", "All Gold", "Crosse&Blackwell", "BlackCat", "Mrs H.S.Ball's", "Benny's"]
         
         llm_response = await llm.ainvoke(
             [
-                            SystemMessage(content=SMART_GROCERY_PROMPT.format(bot_company_brands=bot_company_brands, running_extraction=previous_context, conversation_chunk=data,ingredient="some_ingredient_variable")),
+                SystemMessage(content=prompt)
             ]
         )
 
@@ -175,19 +164,17 @@ async def call_llm(data, previous_context=None, existing_role="anchor", max_retr
     return None
 
 
-async def user_preference_extraction():
-    print("step 2 ============> USER PREFERENCE EXTRACTION")
+async def smart_grocery_extraction():
     conversation_collection = get_collection(CONVERSATION_COLLECTION)
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow_start = today_start + timedelta(days=1)
+    last_month = today_start - timedelta(days=30)
 
     response = list(conversation_collection.find(
         {
-            # "created_at": {
-            #     "$gte": today_start.isoformat(),
-            #     "$lt": tomorrow_start.isoformat(),
-            # },
-            # "status": {"$ne": "processed"},
+            "created_at": {
+                "$gte": last_month.isoformat(),
+                "$lt": today_start.isoformat(),
+            },
         },
         {
             "user_id": 1,
@@ -201,12 +188,11 @@ async def user_preference_extraction():
 
     unique_message = remove_duplicates(response)
     group_users = group_by_user(unique_message)
+    print("group_user=============>",group_users, flush=True)
     
-
-    user_preference_collection = get_collection(USER_PREFERENCE_KEYWORD)
-
+    recipe_brand_collection = get_collection(RECIPE_BRAND_COLLECTION)
+    # print("recipe brand collection obtained", flush=True)
     for single_user in group_users.keys():
-
         user_messages = remove_unwanted_msg(group_users[single_user])
 
         if not user_messages:
@@ -217,21 +203,24 @@ async def user_preference_extraction():
             )
             continue
 
-        existing_doc = user_preference_collection.find_one({"user_id": single_user})
-        anchor_profile = existing_doc[DB_PREFERENCE_FIELD] if existing_doc else {}
 
-        chunk_budget = effective_chunk_budget(anchor_profile)
+        brands = recipe_brand_collection.distinct("name")
+        # print("brands:", brands, flush=True)
+        
+        brands_text = json.dumps(brands, ensure_ascii=False)
+
+        chunk_budget = effective_chunk_budget(brands_text)
         chunks = create_token_chunks(user_messages, chunk_budget)
 
         if not chunks:
             continue
 
-        working_profile = anchor_profile
+        working_profile = None
         merge_failed = False
 
         for i, chunk in enumerate(chunks):
-            role = "anchor" if i == 0 else "draft"
-            result = await call_llm(chunk, previous_context=working_profile, existing_role=role)
+            # role = "anchor" if i == 0 else "draft"
+            result = await call_llm(chunk, brands=brands, previous_context=working_profile)
 
             if result is None:
                 logger.error(
@@ -243,16 +232,19 @@ async def user_preference_extraction():
 
             working_profile = result
 
-        print(f"Final aggregated preference for {single_user}: {working_profile}")
+        # print(f"Final aggregated preference for {single_user}: {working_profile}")
 
         if merge_failed:
             logger.error(f"user_preference_extraction: partial merge failure for {single_user}")
 
+        # print("working_profile===============>",working_profile)
         try:
-            user_preference_collection.update_one(
+            print("log 3========================>")
+            smart_grocery_collection = get_collection(SMART_GROCERY_COLLECTION)
+            smart_grocery_collection.update_one(
                 {"user_id": single_user},
                 {
-                    "$set": {DB_PREFERENCE_FIELD: working_profile},
+                    "$set": {"smart_grocer_list": working_profile},
                     "$setOnInsert": {"cdate": datetime.utcnow()},
                 },
                 upsert=True,
@@ -260,7 +252,7 @@ async def user_preference_extraction():
 
             conversation_collection.update_many(
                 {"user_id": single_user},
-                {"$set": {"status": "processed", "udate": datetime.utcnow()}},
+                {"$set": {"grocery_status": "processed", "udate": datetime.utcnow()}},
             )
         except Exception as e:
             logger.error(f"ERROR persisting preferences for {single_user}: {e}")

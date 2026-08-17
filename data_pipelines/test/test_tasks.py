@@ -1,6 +1,7 @@
 from data_pipelines.tasks.keyword_pipeline import keyword_pipeline
 from data_pipelines.tasks.user_preference_task import user_preference_task, today_conversation_ingest_task, send_user_preference_data, all_conersation_ingest_task
 from data_pipelines.tasks.recipe_ingest import all_recipe_ingest_task, send_metadata_task, today_recipe_ingest_task, triger_convert_vector_task
+from data_pipelines.tasks.smart_grocery_task import recie_brand_ingest_task, smart_grocery_task
 from data_pipelines.recipe_worker.keyword_worker import keywords_generator
 from data_pipelines.db.mongo import get_recipes_collection
 from data_pipelines.db.mongo import recipe_collection
@@ -83,7 +84,15 @@ def start_keyword_pipeline():
 @celery_app.task
 def run_user_preference_pipeline():
     chain(
-        today_conversation_ingest_task.si(),
+        # today_conversation_ingest_task.si(),
         user_preference_task.si(),
-        send_user_preference_data.si(),
+        # send_user_preference_data.si(),
+    ).delay()
+    
+
+@celery_app.task
+def run_smart_grocery_pipeline():
+    chain(
+        # recie_brand_ingest_task.si(),
+        smart_grocery_task.si(),
     ).delay()
