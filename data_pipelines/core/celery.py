@@ -29,6 +29,6 @@ celery_app.conf.beat_schedule = {
     },
 "smart-grocery-pipeline": {
         "task": "data_pipelines.test.test_tasks.run_smart_grocery_pipeline",
-        "schedule": crontab(hour=16, minute=39),
+        "schedule": crontab(hour=11, minute=33),
     }
 }

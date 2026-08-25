@@ -93,6 +93,6 @@ def run_user_preference_pipeline():
 @celery_app.task
 def run_smart_grocery_pipeline():
     chain(
-        # recie_brand_ingest_task.si(),
-        smart_grocery_task.si(),
+        recie_brand_ingest_task.si(),
+        # smart_grocery_task.si(),
     ).delay()

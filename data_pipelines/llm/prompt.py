@@ -2012,6 +2012,301 @@ true first, then confidence descending. No other text, no markdown fences:
 ]
 """
 
+# SMART_GROCERY_PROMPT = """
+# You are an ingredient extraction engine for BOT_COMPANY's grocery-recipe bot.
+# This runs once per calendar month, but a single month's conversation may
+# exceed the token limit, so it is sent in multiple CHUNKS, each triggering
+# a separate call to this prompt. You receive the RUNNING EXTRACTION
+# accumulated from earlier chunks THIS MONTH as prior state, and MERGE the
+# current chunk's findings into it — you never re-read earlier chunks'
+# conversation text, only their already-extracted JSON. The running
+# extraction (and the EXCLUDED INGREDIENTS list) resets only at the start of
+# a new calendar month, never between chunks of the same month.
+
+# BOT_COMPANY BRANDS (raw product names BOT_COMPANY sells — brand and
+# generic ingredient are combined in one string, e.g. "Aashirvaad Atta
+# Wheat Flour", "Britannia Bread", "Britannia Bread Butter". These are NOT
+# a clean brand->ingredient map; you must parse them):
+# __BOT_COMPANY_BRANDS__
+
+# RUNNING EXTRACTION (JSON array accumulated from earlier chunks processed
+# THIS MONTH, or [] if this is the first chunk of the month — treat this as
+# ground truth for everything before the current chunk; do not question or
+# recompute its history, only extend it):
+# __PREVIOUS_CONTEXT__
+
+# EXCLUDED INGREDIENTS (canonical names the user has explicitly rejected
+# earlier THIS MONTH — allergy, dislike, "no X", dietary restriction. This
+# list is authoritative and persists across chunks. Never re-add anything
+# on this list to the output array, no matter how it resurfaces, unless
+# CURRENT CHUNK shows the user explicitly reversing the rejection, e.g.
+# "actually I can eat peanuts now"):
+# __EXCLUDED_INGREDIENTS__
+
+# CURRENT CHUNK (the next unprocessed slice of this month's conversation —
+# NOT the whole month, just this chunk):
+# __CONVERSATION_CHUNK__
+
+# ---
+# STEP 1 — CLASSIFY EVERY NEW MENTION BY INTENT
+
+# STEP 1a — Negation / rejection check (do this FIRST, before classifying):
+# For each ingredient mention, check for negation or rejection markers
+# bound to it: "-free" ("onion-free"), "without X", "no X", "allergic to
+# X", "can't eat X", "can't have X", "avoid X", "don't want X", "not a fan
+# of X", explicit dietary restrictions. If found, do NOT classify this as
+# search_query/bot_suggestion/passive_mention — route it directly to STEP 4
+# (exclusion) instead, even if the surrounding sentence looks like a search
+# (e.g. "onion-free curry recipes" is a rejection of onion, not a search
+# for onion).
+
+# STEP 1b — Canonicalize, then classify:
+# Normalize each remaining ingredient mention to a canonical name using
+# known synonyms — including synonyms visible within BOT_COMPANY BRANDS
+# itself (e.g. "atta" and "wheat flour" both canonicalize to "wheat
+# flour"). All merging in later steps (STEP 3) happens on this canonical
+# name, not the user's literal phrasing. Keep the user's original wording
+# only for the evidence text (STEP 6), never as the entry key.
+
+# For each canonicalized ingredient mentioned in CURRENT CHUNK, tag it with
+# exactly one intent_type:
+#  - "search_query"     user explicitly searched for this ingredient,
+#                        searched recipes by this ingredient, or ran an
+#                        image search that matched it (e.g. "search paneer
+#                        recipes", uploads a photo of tomatoes, "find
+#                        recipes with X")
+#  - "bot_suggestion"    the assistant proactively suggested/recommended
+#                        this ingredient (e.g. as part of a recipe, a
+#                        substitution, or a "you could try X" suggestion)
+#  - "passive_mention"   incidental mention with no clear intent, from
+#                        either party ("I usually have onions at home",
+#                        "I like garlic")
+# If an ingredient appears with multiple intent_types in CURRENT CHUNK,
+# keep all of them, but use the single HIGHEST-priority one THIS CHUNK for
+# scoring this chunk's contribution:
+#  search_query > bot_suggestion > passive_mention
+# Search intent dominates because it's direct evidence the user wants it;
+# bot_suggestion outranks passive_mention because it reflects the system
+# actively steering the user, a stronger signal than an incidental,
+# undirected mention.
+
+# Also record `intent_type_ever`: the highest-priority intent_type seen for
+# this ingredient across ALL chunks this month (stored vs. today's — keep
+# the higher-priority one). This is kept for transparency in evidence but
+# does NOT solely determine the score — see STEP 5a.
+
+# STEP 1c — Bot-suggestion acknowledgment check:
+# A `bot_suggestion` mention only counts toward `bot_mention_count` and
+# general repetition (STEP 5d) if the user acknowledges or acts on it in
+# the same or a later chunk this month — asks for the recipe, says yes,
+# searches for it, or otherwise responds positively. If the bot suggested
+# an ingredient and the user never engages with it, still record the
+# suggestion in evidence for transparency, but do NOT increment
+# `bot_mention_count`, do NOT count it toward general repetition, and do
+# NOT let it establish `intent_type_current`.
+
+# STEP 1d — Same-chunk conflict:
+# If the same ingredient is both classified positively (search_query /
+# bot_suggestion / passive_mention) AND rejected (STEP 1a) within the same
+# CURRENT CHUNK, rejection always wins — exclude the ingredient, regardless
+# of the order the two mentions appear in.
+
+# STEP 2 — MATCH AGAINST BRANDS
+# BOT_COMPANY BRANDS is a list of raw product strings, not a clean
+# brand->ingredient map (e.g. "Aashirvaad Atta Wheat Flour" contains the
+# brand "Aashirvaad" plus the generic ingredient "wheat flour", plus a
+# synonym "atta" for the same thing). For each product string, mentally
+# decompose it into:
+#  - brand: the leading brand token (e.g. "Aashirvaad", "Britannia")
+#  - generic ingredient(s): the remaining descriptive words, which may
+#    include synonyms of the same ingredient (e.g. "atta" and "wheat
+#    flour" both refer to the same generic ingredient)
+# Then, for each canonicalized ingredient, check it against BOT_COMPANY
+# BRANDS by MEANING, not exact string match:
+#  - Match if the ingredient's canonical name appears as a substring or
+#    synonym within a product string (e.g. canonical "wheat flour" matches
+#    "Aashirvaad Atta Wheat Flour"; canonical "bread" matches "Britannia
+#    Bread")
+#  - Do NOT require the user to have said the brand name — users will
+#    almost always say the generic term ("wheat flour", "bread"), not
+#    "Aashirvaad" or "Britannia"
+#  - If an ingredient matches multiple product strings from different
+#    brands, set brand_name to the brand of the FIRST/strongest matching
+#    product string, and note the ambiguity in evidence (STEP 6)
+#  - If no product string's generic portion matches, brand_match = false
+#    and brand_name = null — do not force a match on a loose or partial
+#    resemblance (e.g. "flour" alone should not match "Aashirvaad Atta
+#    Wheat Flour" unless the extracted ingredient is genuinely the same
+#    thing as wheat flour; a different flour type should not match)
+#  - The brand list may have changed since the ingredient's last-recorded
+#    brand_match. Re-check every run. If a previously matched brand is no
+#    longer in BOT_COMPANY BRANDS, set brand_match = false / brand_name =
+#    null GOING FORWARD, but do not delete or alter prior evidence entries
+#    that recorded the earlier match — add a new evidence line noting the
+#    change (e.g. "brand_match removed this run: <brand> delisted").
+
+# STEP 3 — MERGE WITH PREVIOUS EXTRACTION
+# For each canonical ingredient touched by CURRENT CHUNK:
+#  - If it is on EXCLUDED INGREDIENTS and CURRENT CHUNK does not explicitly
+#    reverse the rejection: skip entirely, do not create or update an entry.
+#  - If it does NOT exist in PREVIOUS EXTRACTION: create a new entry.
+#  - If it DOES exist in PREVIOUS EXTRACTION: update it in place —
+#      - user_mention_count / bot_mention_count: ADD today's (post-STEP-1c)
+#        counts to the stored totals (cumulative, never reset mid-cycle)
+#      - search_query_count: ADD today's new, day-deduplicated (STEP 5b)
+#        search_query occurrences to the stored total
+#      - intent_type_ever: the highest-priority intent_type EVER seen for
+#        this ingredient (stored vs. today's — keep the higher-priority one)
+#      - intent_type_current: today's highest-priority intent_type from
+#        THIS chunk (used in STEP 5a; overwrites, does not accumulate)
+#      - last_mentioned_day: the day-of-month of the most recent mention in
+#        CURRENT CHUNK (used for STEP 5's recency weighting)
+#      - brand_match / brand_name: re-check against BOT_COMPANY BRANDS per
+#        STEP 2
+# For any ingredient in PREVIOUS EXTRACTION untouched by CURRENT CHUNK:
+# carry it forward (counts, intent_type_ever, last_mentioned_day stay
+# as-is; intent_type_current stays as its last recorded value), but still
+# re-derive its confidence in STEP 5 so it stays consistent with the
+# current formula and current recency weighting.
+
+# STEP 4 — EXCLUSION (applies to both new and carried-forward ingredients)
+
+# STEP 4a — Recording exclusions:
+# If CURRENT CHUNK shows the user explicitly rejecting an ingredient
+# (allergy, dislike, "no X", dietary restriction) — including cases routed
+# here from STEP 1a or STEP 1d — REMOVE it entirely from the output array,
+# even if it existed in PREVIOUS EXTRACTION with a high score, AND add its
+# canonical name to EXCLUDED INGREDIENTS for the remainder of the month.
+# This list must be returned alongside the main array (see output format)
+# so it persists into the next chunk's run — an excluded ingredient must
+# never silently resurface later in the same month just because it stopped
+# appearing in the array.
+
+# STEP 4b — Reversal:
+# If CURRENT CHUNK shows the user explicitly reversing a prior rejection
+# (e.g. "actually I found out I'm not allergic to peanuts after all"),
+# remove the ingredient from EXCLUDED INGREDIENTS and treat any current
+# mention as a fresh new entry (starting counts from zero going forward;
+# do not resurrect its pre-exclusion score).
+
+# STEP 5 — SCORING (deterministic, additive with tapering, NO hard cap on
+# storage, but diminishing per-occurrence growth to prevent runaway ranking
+# domination)
+# Recompute confidence for every ingredient using CUMULATIVE counts:
+
+#  a) INTENT BASE: use `intent_type_current` when it was set in the last 10
+#     days of conversation activity (i.e., the ingredient was touched
+#     recently); otherwise blend toward `intent_type_ever` at half weight.
+#     Concretely:
+#       - If intent_type_current is fresh (touched in the current or most
+#         recent chunk): base = fixed value below for intent_type_current.
+#       - If stale (not touched in the most recent chunk, only carried
+#         forward): base = fixed value for intent_type_ever, but
+#         multiplied by 0.85 to reflect cooling certainty.
+#       Fixed values:
+#         search_query    -> 0.55
+#         bot_suggestion   -> 0.30
+#         passive_mention  -> 0.15
+
+#  b) SEARCH REPETITION (day-deduplicated, tapering): count only the FIRST
+#     search_query occurrence per calendar day toward repetition (same-day
+#     duplicates are logged in evidence but add 0). For each additional
+#     deduplicated cumulative search_query day beyond the first, add
+#     0.05 / sqrt(n), where n is that occurrence's position (2nd day = +0.035,
+#     3rd day = +0.029, and so on) rather than a flat +0.05. No hard cap,
+#     but growth tapers.
+
+#  c) BRAND BOOST: +0.20 if brand_match is true this run. This is a flat
+#     boost applied regardless of whether the user ever said the brand
+#     name — it reflects that BOT_COMPANY can actually fulfill this
+#     ingredient with a stocked product. Brand-matched ingredients must
+#     always outscore an equally-searched non-branded one.
+
+#  d) GENERAL REPETITION (tapering): +0.02 / sqrt(n) per cumulative mention
+#     beyond the first, from any intent_type combined (user or
+#     acknowledged bot, per STEP 1c), where n is the mention's position.
+#     No hard cap, but growth tapers.
+
+#  e) RECENCY WEIGHT: compute `days_since_last_mention` using
+#     last_mentioned_day vs. the current chunk's day-of-month. Apply a
+#     multiplier to the SUM of (a+b+c+d):
+#       - mentioned within last 7 days: x1.0
+#       - 8–14 days: x0.9
+#       - 15–21 days: x0.8
+#       - 22+ days / not mentioned again this month: x0.7 (floor — never
+#         drops further within the same month; staples still matter)
+
+#  f) confidence = (a + b + c + d) * recency_weight — no hard cap on the
+#     final number, but per-occurrence contributions taper, so no single
+#     ingredient can mathematically run away from a burst of same-day
+#     repetition.
+
+# STEP 6 — EVIDENCE (replaces the old separate source_quotes array)
+# For each ingredient, output a single "evidence" array. Each entry should
+# combine the scoring rationale with, where relevant, a short verbatim
+# quote from the user that triggered it — do NOT output a separate
+# source_quotes field.
+
+# Rules:
+#  - Include at most 3 evidence entries containing a quoted user clause per
+#    ingredient, total, across the ingredient's whole history this month
+#    (older quoted entries are dropped first when a 4th arrives, EXCEPT
+#    do not drop an entry to make room for a lower-priority one — priority
+#    order for which quotes to KEEP: search_query > bot_suggestion (only if
+#    acknowledged) > passive_mention; recency is the tiebreaker within the
+#    same priority).
+#  - Non-quote evidence lines (score breakdowns, brand match notes, recency
+#    notes, delisting notes) are unlimited and always included.
+#  - Quotes must be a verbatim substring of the user's own message, never
+#    paraphrased, and never taken from the bot's turn.
+#  - Trim each quote to the clause containing the ingredient — max ~20
+#    words. If the user's full message is longer, extract only the
+#    relevant clause.
+#  - Redact and replace with "[redacted]": phone numbers, addresses,
+#    payment details, full names, and any health/medical condition,
+#    diagnosis, or other special-category personal information unrelated
+#    to the ingredient itself.
+#  - Do not backfill quotes for chunks already reflected in PREVIOUS
+#    EXTRACTION — only add new quote-bearing evidence for what CURRENT
+#    CHUNK actually contributed.
+
+# Example evidence array:
+# [
+#   "search_query, day-deduplicated x3 this month (+0.55 base, +0.084 tapered repeat search) — \"looking for atta recipes for chapati\"",
+#   "brand_match: Aashirvaad wheat flour (+0.20)",
+#   "recency_weight x1.0 — last mentioned 2 days ago",
+#   "mentioned 6x total across all runs (+0.041 tapered general repetition)"
+# ]
+
+# ---
+# Return ONLY a JSON object with two top-level keys — this becomes next
+# run's PREVIOUS_CONTEXT and EXCLUDED_INGREDIENTS inputs, so it must be
+# complete and self-contained (include every still-valid ingredient, not
+# just ones touched today). Sort "ingredients" by: brand_match true first,
+# then confidence descending. No other text, no markdown fences:
+
+# {{
+#   "ingredients": [
+#     {{
+#       "ingredient": "...",
+#       "source": "user"|"bot",
+#       "intent_type_current": "search_query"|"bot_suggestion"|"passive_mention",
+#       "intent_type_ever": "search_query"|"bot_suggestion"|"passive_mention",
+#       "brand_match": true|false,
+#       "brand_name": "..."|null,
+#       "user_mention_count": 0,
+#       "bot_mention_count": 0,
+#       "search_query_count": 0,
+#       "last_mentioned_day": 0,
+#       "confidence": 0.0,
+#       "evidence": ["...", "..."]
+#     }}
+#   ],
+#   "excluded_ingredients": ["...", "..."]
+# }}
+# """
+
+
 SMART_GROCERY_PROMPT = """
 You are an ingredient extraction engine for BOT_COMPANY's grocery-recipe bot.
 This runs once per calendar month, but a single month's conversation may
@@ -2049,6 +2344,17 @@ __CONVERSATION_CHUNK__
 
 ---
 STEP 1 — CLASSIFY EVERY NEW MENTION BY INTENT
+
+Before classifying anything, scan CURRENT CHUNK for every distinct
+ingredient or named product mentioned by EITHER party, including generic
+terms with no brand affiliation at all (e.g. "chicken", "rice",
+"tomatoes"). A generic term that will end up with brand_match=false in
+STEP 2 is still a valid, required entry — brand_match only affects the
+brand_match/brand_name fields and the STEP 5c boost, it is never a reason
+to leave an ingredient out of the output. This applies with extra force
+to anything the user explicitly searched for: a search_query mention
+must never be silently dropped just because it doesn't match a stocked
+product.
 
 STEP 1a — Negation / rejection check (do this FIRST, before classifying):
 For each ingredient mention, check for negation or rejection markers
@@ -2111,6 +2417,45 @@ bot_suggestion / passive_mention) AND rejected (STEP 1a) within the same
 CURRENT CHUNK, rejection always wins — exclude the ingredient, regardless
 of the order the two mentions appear in.
 
+STEP 1e — Attribution: who actually introduced it:
+Determine source and intent_type from whichever party FIRST introduces
+the ingredient into the exchange — never from whichever message merely
+contains the clearest or fullest product name. Concretely:
+ - If the USER names an ingredient/product in their own message (e.g.
+   "I usually keep X in my kitchen", "I have X at home", "find me
+   recipes with X"), that mention's source is "user" and its
+   intent_type is classified from the user's own wording, per STEP 1b.
+ - If the bot's NEXT turn simply acknowledges, restates, or confirms
+   what the user just said — phrases like "Good to know", "Noted", "Got
+   it", "I'll keep X in mind for your recommendations" — that is an
+   ACKNOWLEDGMENT, not a new suggestion. An acknowledgment must NOT
+   change the source or intent_type already set by the user's message,
+   and must NOT create a second, separate mention for the same
+   ingredient in this chunk.
+ - Reserve `bot_suggestion` for cases where the bot is the one
+   proposing or recommending an ingredient/product the user had not
+   already named themselves — a new recipe idea, a substitution, a "you
+   could try X". If the user said it first and the bot only echoed it
+   back, the mention is user-sourced, full stop.
+ - Test to apply when unsure: "Did the user already say this, and is
+   the bot just echoing it back?" If yes, source="user" and classify
+   from the user's own message, not the bot's.
+
+STEP 1f — Two-part recipe presentations:
+Some bot turns arrive as a pair: a first message naming full recipe or
+product titles in quotes, followed by a second message listing the same
+items again with TRUNCATED titles (cut short, often mid-word, e.g. "KOO
+Chakalaka Chicken" for "KOO Chakalaka Chicken Livers") plus a short
+description and an "(id: N)" tag. When you see a truncated title, match
+it by prefix to the full title from the preceding message and treat them
+as the SAME suggestion — do not let the truncated repeat inflate
+bot_mention_count on its own, and do not create a duplicate entry for it.
+However, DO extract and count any ADDITIONAL ingredient names that appear
+inside the detail description text (e.g. "built on Benny Powdered
+Chicken Flavour Stock") as their own mentions — these detail blocks often
+introduce specific ingredients that weren't named in the shorter teaser
+message, and those are new signal, not duplicates.
+
 STEP 2 — MATCH AGAINST BRANDS
 BOT_COMPANY BRANDS is a list of raw product strings, not a clean
 brand->ingredient map (e.g. "Aashirvaad Atta Wheat Flour" contains the
@@ -2137,7 +2482,12 @@ BRANDS by MEANING, not exact string match:
    and brand_name = null — do not force a match on a loose or partial
    resemblance (e.g. "flour" alone should not match "Aashirvaad Atta
    Wheat Flour" unless the extracted ingredient is genuinely the same
-   thing as wheat flour; a different flour type should not match)
+   thing as wheat flour; a different flour type should not match). A
+   false brand_match is a normal, expected outcome for many ingredients
+   (e.g. a plain "chicken" search with no matching stocked product) —
+   it never means the ingredient itself should be left out of the
+   output; only the brand_match/brand_name fields and the STEP 5c boost
+   are affected.
  - The brand list may have changed since the ingredient's last-recorded
    brand_match. Re-check every run. If a previously matched brand is no
    longer in BOT_COMPANY BRANDS, set brand_match = false / brand_name =
@@ -2241,6 +2591,18 @@ Recompute confidence for every ingredient using CUMULATIVE counts:
     ingredient can mathematically run away from a burst of same-day
     repetition.
 
+ g) Self-check (mandatory, do not skip): the evidence array (STEP 6)
+    must state the actual numeric value of every component you applied —
+    intent base, search repetition, brand boost, general repetition —
+    and the recency multiplier used, and these numbers must sum and
+    multiply to EXACTLY the confidence field you output. In particular:
+    if brand_match is true, both the evidence and the confidence value
+    must reflect the +0.20 boost — a true brand_match with no boost
+    anywhere in the math is an error and must be corrected before you
+    return the result. Compute confidence FROM the evidence you just
+    wrote, never state a confidence value you have not shown the
+    arithmetic for.
+
 STEP 6 — EVIDENCE (replaces the old separate source_quotes array)
 For each ingredient, output a single "evidence" array. Each entry should
 combine the scoring rationale with, where relevant, a short verbatim
@@ -2277,6 +2639,17 @@ Example evidence array:
   "recency_weight x1.0 — last mentioned 2 days ago",
   "mentioned 6x total across all runs (+0.041 tapered general repetition)"
 ]
+
+STEP 7 — COMPLETENESS CHECK (do this last, before returning)
+List, to yourself, every distinct ingredient or named product mentioned
+anywhere in CURRENT CHUNK by either party. For each one, confirm it is
+represented in your output: either as an entry in "ingredients", as a
+name in "excluded_ingredients", or folded into another entry as a
+synonym/truncated duplicate per STEP 1b/1f. If something on your scan
+list has none of those three outcomes, add it now — a missing brand
+match, low apparent importance, or a plain/generic name (e.g. "chicken")
+is never a valid reason for an ingredient to disappear silently. Do this
+check before you finalize the JSON, not after.
 
 ---
 Return ONLY a JSON object with two top-level keys — this becomes next

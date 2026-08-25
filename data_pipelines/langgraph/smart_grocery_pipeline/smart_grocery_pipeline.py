@@ -172,8 +172,8 @@ async def smart_grocery_extraction():
     response = list(conversation_collection.find(
         {
             "created_at": {
-                "$gte": last_month.isoformat(),
-                "$lt": today_start.isoformat(),
+                "$gte": last_month,
+                "$lt": today_start,
             },
         },
         {
@@ -185,10 +185,11 @@ async def smart_grocery_extraction():
         },
     ).sort("created_at", 1))
 
+    # print("conversation==========>",response)
 
     unique_message = remove_duplicates(response)
     group_users = group_by_user(unique_message)
-    print("group_user=============>",group_users, flush=True)
+    # print("group_user=============>",group_users, flush=True)
     
     recipe_brand_collection = get_collection(RECIPE_BRAND_COLLECTION)
     # print("recipe brand collection obtained", flush=True)

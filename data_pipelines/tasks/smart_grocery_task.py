@@ -1,6 +1,8 @@
 import asyncio
 import httpx
 
+from pymongo import UpdateOne
+
 from data_pipelines.db.mongo import get_collection
 from data_pipelines.core.celery import celery_app
 from data_pipelines.core.config import BACK_END_URL
@@ -27,8 +29,15 @@ async def recie_brand_ingest():
             
             items = conversation_data.get("brands", [])
             
-            if items:
-                user_preference_keyword_collection.insert_many(items)
+            if not items:
+                break            
+                            
+            operations = [
+                UpdateOne({"id": item["id"]}, {"$set": item}, upsert=True)
+                for item in items
+            ]
+
+            user_preference_keyword_collection.bulk_write(operations)
     
             if not conversation_data["brands"]:
                 break
